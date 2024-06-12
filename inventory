@@ -5,9 +5,9 @@
 # if dcs_exists: false and dcs_type: "etcd" (in vars/main.yml)
 # ETCD nodes (<hostname|FQDN|IPv4> [ansible_host=<IPv4>]) (set ansible_host only if hostname not resolved, or use /etc/hosts)
 [etcd_cluster]  # recommendation: 3 or 5-7 nodes
-etcd-n1 #ansible_host=172.16.35.6
-etcd-n2 #ansible_host=172.16.35.3
-etcd-n3 #ansible_host=172.16.35.24
+etcd-n1 #ansible_host=192.168.10.201
+etcd-n2 #ansible_host=192.168.10.202
+etcd-n3 #ansible_host=192.168.10.203
 
 # PostgreSQL nodes (<hostname|FQDN|IPv4> postgresql_exists='<false|true>')
 [master]
