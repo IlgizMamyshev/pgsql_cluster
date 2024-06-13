@@ -26,7 +26,7 @@ synchronous_node_count: 2  # number of synchronous standby databases
 patroni_with_watchdog: true # true or false
 
 # DNS Connection Point
-cluster_vip: "172.16.32.180"  # empty or one VIP address (or some VIP addresses in different subnets, separated by commas, for example: "172.16.32.180,172.16.10.180" ), for client access to PostgreSQL
+cluster_vip: "192.168.10.222"  # empty or one VIP address (or some VIP addresses in different subnets, separated by commas, for example: "172.16.32.180,172.16.10.180" ), for client access to PostgreSQL
 dnscp:
   vcompname: "{{ patroni_cluster_name }}" # Virtual Computer Name - Client Access Point
   vcomppassword: "Password3" # Password for Virtual Computer Name Account. Empty for anonimous auth to DNS zone.
@@ -39,8 +39,8 @@ dnscp:
   #sudo astra-winbind -dc demo.ru -d demo.ru -g DEMO -u imamyshev@demo.ru -p StrongP@ssw0rd -y
 
 # DCS (Distributed Consensus Store)
-dcs_exists: false # 'false' or 'true'. Use 'true' if you do not want to install and configure the etcd cluster
-dcs_type: "patroni" # "etcd" or "patroni"
+dcs_exists: true # 'false' or 'true'. Use 'true' if the etcd cluster is already installed.
+dcs_type: "etcd" # "etcd" or "patroni"
 
 # if dcs_exists: false and dcs_type: "patroni"
 patroni_raft_data_dir: "/etc/patroni" #"/var/lib/raft"
@@ -84,7 +84,7 @@ haproxy_timeout:
   server: "60m"
 
 # PostgreSQL variables
-postgresql_fork: "PostgresPro" # "PostgreSQL" or "PostgresPro"
+postgresql_fork: "PostgreSQL" # "PostgreSQL" or "PostgresPro"
 postgresql_version: "15" # major version
 # postgresql_data_dir: see vars/Debian.yml
 postgresql_port: "5432"
@@ -98,7 +98,7 @@ postgresql_password_encryption_algorithm: "scram-sha-256"  # or "md5" if your cl
 
 # postgresql parameters to bootstrap dcs (are parameters for example)
 postgresql_parameters:
-  - {option: "max_connections", value: "200"}
+  - {option: "max_connections", value: "1000"}
   - {option: "superuser_reserved_connections", value: "5"}
   - {option: "password_encryption", value: "{{ postgresql_password_encryption_algorithm }}"}
   - {option: "deadlock_timeout", value: "5s"}  # 1s is default

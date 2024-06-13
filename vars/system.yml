@@ -113,7 +113,7 @@ sudo_users:
 
 
 # Firewall. Installs an iptables-based firewall for Linux (ansible-role-firewall)
-firewall_enabled_at_boot: true # or false (Set up a firewall yourself)
+firewall_enabled_at_boot: false # or false (Set up a firewall yourself)
 
 firewall_allowed_tcp_ports_for:
   master: []
@@ -134,8 +134,8 @@ firewall_allowed_tcp_ports_for:
     - "10050"  # Zabbix agent
   etcd_cluster:
     - "{{ ansible_ssh_port | default(22) }}"
-    - "2379"  # ETCD port
-    - "2380"  # ETCD port
+    - "2379"
+    - "2380"
 #    - "3389"  # RDP
     - "10050"  # Zabbix agent
   balancers:

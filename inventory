@@ -11,10 +11,10 @@ etcd-n3 ansible_host=192.168.10.203
 
 # PostgreSQL nodes (<hostname|FQDN|IPv4> postgresql_exists='<false|true>')
 [master]
-pgsql-n2 postgresql_exists='false'
+pgsql-n2 ansible_host=192.168.10.202  postgresql_exists='false'
 
 [replica]
-pgsql-n3 postgresql_exists='false'
+pgsql-n3 ansible_host=192.168.10.203 postgresql_exists='false'
 
 [postgres_cluster:children]
 master
@@ -22,12 +22,12 @@ replica
 
 # if with_patroni_raft_controller: true (in vars/main.yml)
 [patroni_raft_controller]
-pgsql-n1
+pgsql-n1 ansible_host=192.168.10.201
 
 # if with_haproxy_load_balancing: true (in vars/main.yml)
 # HAProxy nodes (IP address (or hostname, not FQDN)) (hostname recommended)
 [balancers]
-pgsql-n2
+pgsql-n2 
 pgsql-n3
 
 # Connection settings

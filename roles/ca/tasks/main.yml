@@ -22,7 +22,7 @@
     privatekey_path: "{{ pki_cert_artifacts_dir }}/ca.key"
     common_name: ca
     organization_name: "pgsql cluster Root CA"
-    country_name: "Russian Federation"
+    country_name: "RU"
     #email_address: "{{ pki_email_address }}"
     basic_constraints:
       - CA:TRUE
