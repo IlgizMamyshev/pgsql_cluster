@@ -29,22 +29,10 @@
 - развёртывание HAProxy для балансировки доступа к репликам только для чтения;
 - развёртывание кластера [etcd](https://etcd.io/docs/v3.5/op-guide/);
 
-##### Высокодоступный кластер, на базе Patroni (на чистом RAFT) и DNSCP (балансировка с HAProxy опционально):  
-![PGSQLCluster](https://github.com/IlgizMamyshev/pgsql_cluster/blob/master/doc/PGSQLClusterPatroniOnPureRAFT.png)
+##### Высокодоступный кластер, на базе Patroni, etcd и DNSCP:  
+![PGSQLCluster](https://github.com/IlgizMamyshev/pgsql_cluster/blob/master/doc/PGSQLClusterTypeA.png)
 
 Другие варианты реализации архитектуры высокой доступности - смотреть [примеры](./doc/README.md).
-
-Применение HAProxy обеспечивает возможность распределения нагрузки по чтению. Это также позволяет масштабировать кластер с репликами только для чтения.
-
-- порт 5000 (чтение / запись) мастер
-- порт 5001 (только чтение) все реплики
-
-###### если переменная "synchronous_mode" равна 'true' (vars/main.yml):
-
-- порт 5002 (только чтение) только синхронные реплики
-- порт 5003 (только чтение) только асинхронные реплики
-
-> Для развёртывания кластера без HAProxy задайте `with_haproxy_load_balancing: false` в файле переменных vars/main.yml
 
 #### Компоненты высокой доступности:
 [**Patroni**](https://github.com/zalando/patroni) - это шаблон для создания решения высокой доступности с использованием Python и распределенного хранилища конфигурации, [*собственного*](https://github.com/zalando/patroni/pull/375) или такого как ZooKeeper, etcd, Consul или Kubernetes. Используется для автоматизации управления экземплярами PostgreSQL и автоматического аварийного переключения.
@@ -54,9 +42,6 @@
 [Что такое Распределенный Консенсус (Distributed Consensus)?](http://thesecretlivesofdata.com/raft/)
 
 [**DNS Connection Point for Patroni**](https://github.com/IlgizMamyshev/dnscp) используется для обеспечения единой точки входа. DNSCP обеспечивает регистрацию DNS-записи как единой точки входа для клиентов и позволяет использовать один или более виртуальных IP-адресов (VIP), принадлежащих одной или нескольким подсетям. DNSCP использует функцию обратных вызовов ([callback](https://patroni.readthedocs.io/en/latest/SETTINGS.html)) [Patroni](https://github.com/zalando/patroni). 
-
-#### Компоненты балансировки нагрузки:
-[**HAProxy**](http://www.haproxy.org/) — очень быстрое и надежное решение, предлагающее высокую доступность, балансировку нагрузки и прокси для приложений на основе TCP и HTTP. HAProxy входит в состав репозиторя ОС Astra Linux, но также можно использовать внешний источник.
 
 #### СУБД PostgreSQL:
 [**PostgreSQL**](https://www.postgresql.org) - реляционная база данных с открытым исходным кодом. При использовании ОС Astra Linux возможно использование PostgreSQL в составе репозитория ОС.  
@@ -85,16 +70,12 @@
 Ansible ([Что такое Ansible](https://www.ansible.com/resources/videos/quick-start-video)?)
 
 ## Требования к портам
-Список необходимых портов TCP, которые должны быть открыты для кластера баз данных:
+Список необходимых портов TCP, которые должны быть открыты на узлах кластера кластера СУБД:
 
 - `5432` (PostgreSQL)
 - `8008` (Patroni Rest API)
-- `2379` (Patroni RAFT)
 - `2379`, `2380` (etcd)
-- `5000` (HAProxy - (чтение / запись) мастер реплика
-- `5001` (HAProxy - (только чтение) все реплики
-- `5002` (HAProxy - (только чтение) только синхронные реплики
-- `5003` (HAProxy - (только чтение) только асинхронные реплики
+- `2379` (Patroni RAFT)
 
 #### Связанные ссылки:
 - [Планирование портов и протоколов](/doc/protocol_workloads.md)
@@ -108,7 +89,7 @@ Ansible ([Что такое Ansible](https://www.ansible.com/resources/videos/qu
 
 - **Patroni RAFT**: 
 
-Patroni может не зависеть от сторонних систем DCS (Distributed Consensus Store, типа etcd, Consul, ZooKeeper) за счёт собственной реализации [RAFT](https://patroni.readthedocs.io/en/latest/SETTINGS.html#raft-settings). При необходимости возможность использовать внешние системы DCS остаётся.
+Patroni может не зависеть от сторонних систем DCS (Distributed Consensus Store, типа etcd, Consul, ZooKeeper) за счёт собственной реализации [RAFT](https://patroni.readthedocs.io/en/latest/SETTINGS.html#raft-settings).
 
 - **DCS (Распределённое Хранилище Конфигурации (Distributed Configuration Store))**: 
 
@@ -173,18 +154,13 @@ Patroni может не зависеть от сторонних систем DC
 5.1 Запустите playbook для установки кластера etcd (опционально, если используете etcd DCS вместо Patroni RAFT):
 
 `sudo su` \
-`ansible-playbook etcd_cluster.yml` \
-После успешного развёртывания в /vars/[main.yml](./vars/main.yml) укажите `dcs_exists: true` и `dcs_type: "etcd"`
+`ansible-playbook etcd_cluster.yml -K` \
+После успешного развёртывания etcd в /vars/[main.yml](./vars/main.yml) укажите `dcs_exists: true` и `dcs_type: "etcd"`
 
 5.2 Запустите playbook для установки кластера PostgreSQL:
 
 `sudo su` \
-`ansible-playbook deploy_pgcluster.yml`
-
-5.3 Запустите playbook для установки HA Proxy (опционально):
-
-`ansible-playbook balancers.yml` \
-Чтобы установить HA Proxy сразу во время развёртывания кластера PostgreSQL в /vars/[main.yml](./vars/main.yml) укажите `with_haproxy_load_balancing: true`
+`ansible-playbook deploy_pgcluster.yml -K`
 
 ## Переменные
 Смотри файлы vars/[main.yml](./vars/main.yml), [system.yml](./vars/system.yml) и [Debian.yml](./vars/Debian.yml), чтобы узнать подробности.
