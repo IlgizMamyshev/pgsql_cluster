@@ -114,10 +114,10 @@ Patroni может не зависеть от сторонних систем DC
 - [use_pg_rewind](https://postgrespro.ru/docs/postgrespro/14/app-pgrewind): '[false](https://patroni.readthedocs.io/en/latest/SETTINGS.html#dynamic-configuration-settings)' (включен по умолчанию)
 
 ## Развёртывание: быстрый старт
--1. Подготовьте серверы
-Установите операционную систему, настройте репозитории операционной системы и PostgreSQL, установите обновления операционной системы.
-Переименуйте серверы: `sudo systemctl set-hostname pgsql-n1.im.local`
-Присоедините к домену Active Directory, если требуется.
+0. Подготовьте серверы
+Установите операционную систему, настройте репозитории операционной системы и PostgreSQL, установите обновления операционной системы. \
+Переименуйте серверы: `sudo systemctl set-hostname pgsql-n1.im.local` \
+Присоедините серверы к домену Active Directory, если требуется. \
 
 0. [Установите Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) на сервер управления, свой компьютер или ноутбук
 ##### Пример 1 (установка, используя репозиторий [Astra Linux](https://wiki.astralinux.ru/pages/viewpage.action?pageId=27362819)):
