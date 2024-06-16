@@ -114,12 +114,12 @@ Patroni может не зависеть от сторонних систем DC
 - [use_pg_rewind](https://postgrespro.ru/docs/postgrespro/14/app-pgrewind): '[false](https://patroni.readthedocs.io/en/latest/SETTINGS.html#dynamic-configuration-settings)' (включен по умолчанию)
 
 ## Развёртывание: быстрый старт
-0. Подготовьте серверы
+1. Подготовьте серверы
 Установите операционную систему, настройте репозитории операционной системы и PostgreSQL, установите обновления операционной системы. \
 Переименуйте серверы: `sudo systemctl set-hostname pgsql-n1.im.local` \
-Присоедините серверы к домену Active Directory, если требуется. \
+Присоедините серверы к домену Active Directory, если требуется.
 
-0. [Установите Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) на сервер управления, свой компьютер или ноутбук
+2. [Установите Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) на сервер управления, свой компьютер или ноутбук
 ##### Пример 1 (установка, используя репозиторий [Astra Linux](https://wiki.astralinux.ru/pages/viewpage.action?pageId=27362819)):
 `sudo apt update` \
 `sudo apt install ansible` \
@@ -138,31 +138,31 @@ Patroni может не зависеть от сторонних систем DC
 `sudo pip3 install --upgrade pip` \
 `sudo pip install pyOpenSSL`
 
-1. Скачайте или клонируйте этот репозиторий
+3. Скачайте или клонируйте этот репозиторий
 
 `git clone https://github.com/IlgizMamyshev/pgsql_cluster.git`
 
-2. Перейдите в каталог с файлами playbook
+4. Перейдите в каталог с файлами playbook
 
 `cd pgsql_cluster/`
 
-3. Отредактируйте файл инвентаризации
+5. Отредактируйте файл инвентаризации
 
 ##### Задайте IP-адреса и параметры подключения (`ansible_user`, `ansible_ssh_pass` ...)
 
 `vim inventory`
 
-4. Отредактируйте значения переменных в файле vars/[main.yml](./vars/main.yml)
+6. Отредактируйте значения переменных в файле vars/[main.yml](./vars/main.yml)
 
 `vim vars/main.yml`
 
-5.1 Запустите playbook для установки кластера etcd (опционально, если используете etcd DCS вместо Patroni RAFT):
+6.1 Запустите playbook для установки кластера etcd (опционально, если используете etcd DCS вместо Patroni RAFT):
 
 `sudo su` \
 `ansible-playbook etcd_cluster.yml -K` \
 После успешного развёртывания etcd в /vars/[main.yml](./vars/main.yml) укажите `dcs_exists: true` и `dcs_type: "etcd"`
 
-5.2 Запустите playbook для установки кластера PostgreSQL:
+6.2 Запустите playbook для установки кластера PostgreSQL:
 
 `sudo su` \
 `ansible-playbook deploy_pgcluster.yml -K`
