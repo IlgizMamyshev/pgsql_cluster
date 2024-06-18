@@ -18,7 +18,7 @@ pexpect>=4.8.0
 #pysyncobj>=0.3.8
 #cryptography>=1.4
 #
-#cdiff
+cdiff
 #psycopg2-binary>=2.8.4
 setuptools_rust
 psycopg

@@ -18,7 +18,7 @@
   hosts: all,!etcd_cluster
   gather_facts: true
 
-#- import_playbook: etcd_cluster.yml
+#- import_playbook: deploy_etcdcluster.yml
 #  when: dcs_exists|bool == false and dcs_type == "etcd" # не работает
 - name: "ETCD cluster"
   hosts: etcd_cluster

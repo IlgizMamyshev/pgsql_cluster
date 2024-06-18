@@ -1,0 +1,37 @@
+---
+# yamllint disable rule:line-length
+
+# Create Client Certificate for MTLS Client Auth 
+
+- name: "Generate private key for Client certificate"
+  openssl_privatekey:
+    path: "{{ pki_cert_artifacts_dir }}/client.key"
+    type: RSA
+    size: 4096
+    state: present
+    force: true
+
+- name: "Generate CSR for Client certificate"
+  openssl_csr:
+    path: "{{ pki_cert_artifacts_dir }}/client.csr"
+    privatekey_path: "{{ pki_cert_artifacts_dir }}/client.key"
+    common_name: client
+    organization_name: "Client certificate for authentication"
+    country_name: "RU"
+    #email_address: "{{ pki_email_address }}"
+    key_usage:
+      - digitalSignature
+    extended_key_usage:
+      - clientAuth
+    force: true
+
+- name: "Generate Client certificate"
+  openssl_certificate:
+    path: "{{ pki_cert_artifacts_dir }}/client.crt"
+    csr_path: "{{ pki_cert_artifacts_dir }}/client.csr"
+    ownca_path: "{{ pki_cert_artifacts_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ pki_cert_artifacts_dir }}/ca.key"
+    provider: ownca
+    force: true
+
+...

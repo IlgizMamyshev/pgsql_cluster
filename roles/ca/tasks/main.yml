@@ -42,4 +42,7 @@
     #selfsigned_not_after: "21221231235900Z" # ошибка "DeprecationWarning: the imp module is deprecated in favour of importlib"
     force: true
 
+# Create Client Certificate for TLS Client Auth
+- import_tasks: client-cert.yml
+
 ...

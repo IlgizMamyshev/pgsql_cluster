@@ -12,7 +12,7 @@ proxy_env: {}
 # Patroni
 patroni_cluster_name: "PGSQL-CL"  # specify the cluster name
 patroni_restapi_port: "8008" # Patroni REST API port (Used https protocol in this project!)
-patroni_install_version: "latest"  # or specific version (example 1.5.6)
+patroni_install_version: "2.1.7" # "latest"  # or specific version (example 1.5.6)
 patroni_scripts_dir: "/etc/patroni" # for patroni callback scripts
 patroni_superuser_username: "postgres"
 patroni_superuser_password: "Password"  # please change password
@@ -31,7 +31,7 @@ dnscp:
   vcompname: "{{ patroni_cluster_name }}" # Virtual Computer Name - Client Access Point
   vcomppassword: "Password3" # Password for Virtual Computer Name Account. Empty for anonimous auth to DNS zone.
   #set password example (powershell): Get-ADComputer PGSQL-CL | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "Password3" -Force)
-  dnszonefqdn: "demo.ru" # Set DNS zone FQDN (AD Domain FQDN).
+  dnszonefqdn: "im.local" # Set DNS zone FQDN (AD Domain FQDN).
   dnsserver: "" # Set FQDN or IP or empty (empty is recommended for automatically detect). Used for register DNS name.
   ttl: "1200" # DNS record TTL in seconds. TTL=1200 - default. Set TTL=30 for multi-site clusters (recommended).
   #Join to ADDS:
@@ -85,7 +85,7 @@ haproxy_timeout:
 
 # PostgreSQL variables
 postgresql_fork: "PostgreSQL" # "PostgreSQL" or "PostgresPro"
-postgresql_version: "15" # major version
+postgresql_version: "16" # major version
 # postgresql_data_dir: see vars/Debian.yml
 postgresql_port: "5432"
 postgresql_ifname: "eth0" # forexample "eth0", "bond0" - network interface name on each cluster node
