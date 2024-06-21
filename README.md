@@ -51,7 +51,7 @@
 [**PostgreSQL**](https://www.postgresql.org) - реляционная база данных с открытым исходным кодом. При использовании ОС Astra Linux возможно использование PostgreSQL в составе репозитория ОС.  
 Поддерживаются все поддерживаемые версии PostgreSQL.
 
-:white_check_mark: протестировано: `PostgreSQL 11, 14, 15, 16`
+:white_check_mark: протестировано: `PostgreSQL 11, 12, 13, 14, 15, 16`
 
 [**Postgres Pro**](https://www.postgrespro.ru) - Российская система управления базами данных на основе PostgreSQL. Коммерческий продукт.
 Поддерживаются все версии Postgres Pro, редакции Standard и Enterprise.
