@@ -160,14 +160,9 @@ Patroni может не зависеть от сторонних систем DC
 
 `vim vars/main.yml`
 
-6.1 Запустите playbook для установки кластера etcd (опционально, если используете etcd DCS вместо Patroni RAFT):
+7 Запустите playbook для установки кластера PostgreSQL:
 
-`sudo ansible-playbook deploy_etcdcluster.yml -K` \
-После успешного развёртывания etcd в /vars/[main.yml](./vars/main.yml) укажите `dcs_exists: true` и `dcs_type: "etcd"`
-
-6.2 Запустите playbook для установки кластера PostgreSQL:
-
-`sudo ansible-playbook deploy_pgcluster.yml -K`
+`sudo ansible-playbook deploy_pgcluster.yml --flush-cache -K`
 
 ## Переменные
 Смотри файлы vars/[main.yml](./vars/main.yml), [system.yml](./vars/system.yml) и [Debian.yml](./vars/Debian.yml), чтобы узнать подробности.
