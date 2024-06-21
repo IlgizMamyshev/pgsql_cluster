@@ -1,6 +1,4 @@
 ---
-# yamllint disable rule:line-length
-# yamllint disable rule:comments-indentation
 
 - name: Make sure handlers are flushed immediately
   meta: flush_handlers
@@ -47,18 +45,7 @@
         umask: "0022"
       environment:
         PATH: "{{ ansible_env.PATH }}:/usr/local/bin:/usr/bin"
-      when: dcs_type == "etcd" and patroni_pip_package_repo | length < 1 and patroni_install_version == "latest"
-
-    - name: Install patroni[raft]
-      pip:
-        name: patroni[raft]
-        state: latest
-        executable: pip3
-        extra_args: "--trusted-host=pypi.python.org --trusted-host=pypi.org --trusted-host=files.pythonhosted.org"
-        umask: "0022"
-      environment:
-        PATH: "{{ ansible_env.PATH }}:/usr/local/bin:/usr/bin"
-      when: dcs_type == "patroni" and patroni_pip_package_repo | length < 1 and patroni_install_version == "latest"
+      when: patroni_pip_package_repo | length < 1 and patroni_install_version == "latest"
 
     - name: "Install patroni {{ patroni_install_version }}"
       pip:
@@ -191,6 +178,7 @@
     owner: postgres
     group: postgres
     mode: 0644
+
 - name: "Copy over the Patroni cluster member certificate"
   copy:
     src: "{{ pki_cert_artifacts_dir }}/{{inventory_hostname}}.crt"
@@ -199,6 +187,7 @@
     owner: root
     group: root
     mode: 0644
+
 - name: "Copy over the Patroni cluster member key"
   copy:
     src: "{{ pki_cert_artifacts_dir }}/{{inventory_hostname}}.key"
@@ -226,16 +215,8 @@
     mode: 0750
   when: patroni_log_destination == 'logfile'
 
-- name: "Create Patroni RAFT data directory"
-  file:
-    path: "{{ patroni_raft_data_dir }}"
-    owner: postgres
-    group: postgres
-    state: directory
-    mode: 0750
-  when: dcs_type == 'patroni'
-
-- block:  # for add_pgnode.yml
+# for add_pgnode.yml
+- block:
     - name: Fetch patroni.yml conf file from master
       run_once: true
       fetch:
@@ -279,14 +260,14 @@
     mode: 0644
 
 - name: Prepare PostgreSQL | create statistics directory (if not already exists)
-  file:
+  ansible.builtin.file:
     path: "{{ postgresql_stats_temp_directory_path }}"
     state: directory
     mode: 01777
   when:
     - postgresql_stats_temp_directory_path is defined
     - postgresql_stats_temp_directory_path != 'none'
-    - postgresql_version|int < 15
+    - postgresql_version is version('15', '<')
 
 - name: Prepare PostgreSQL | mount the statistics directory in memory (tmpfs)
   mount:
@@ -298,7 +279,7 @@
   when:
     - postgresql_stats_temp_directory_path is defined
     - postgresql_stats_temp_directory_path != 'none'
-    - postgresql_version|int < 15
+    - postgresql_version is version('15', '<')
 
 - name: Prepare PostgreSQL | make sure the postgresql log directory "{{ postgresql_log_dir }}" exists
   file:
@@ -317,7 +298,8 @@
     mode: 0750
   when: postgresql_wal_dir is defined and postgresql_wal_dir | length > 0
 
-- block:  # wheh postgresql NOT exists
+# wheh postgresql NOT exists
+- block:
     - name: Prepare PostgreSQL | make sure PostgreSQL data directory "{{ postgresql_data_dir }}" exists
       file:
         path: "{{ postgresql_data_dir }}"
@@ -386,7 +368,8 @@
       when: (postgresql_wal_dir is defined and postgresql_wal_dir | length > 0)
   when: postgresql_exists != "true"
 
-- block:  # when postgresql exists
+# when postgresql exists
+- block:
     - name: Prepare PostgreSQL | check that data directory "{{ postgresql_data_dir }}" is initialized
       stat:
         path: "{{ postgresql_data_dir }}/PG_VERSION"
@@ -523,7 +506,8 @@
       changed_when: false
   when: postgresql_exists == "true" #and patroni_cluster_bootstrap_method == "initdb"
 
-- block:  # start patroni on master
+# start patroni on master
+- block:
     - name: Start Patroni service on the Master server
       systemd:
         daemon_reload: true
@@ -561,7 +545,8 @@
       when: patroni_standby_cluster.host is not defined or patroni_standby_cluster.host | length < 1
   when: is_master == "true"
 
-- block:  # pg_hba (using a templates/pg_hba.conf.j2)
+# pg_hba (using a templates/pg_hba.conf.j2)
+- block:
     - name: Prepare PostgreSQL | generate pg_hba.conf
       template:
         src: templates/pg_hba.conf.j2
@@ -584,7 +569,8 @@
       when: generate_pg_hba is changed
   when: existing_pgcluster is not defined or not existing_pgcluster|bool
 
-- block:  # for add_pgnode.yml
+# for add_pgnode.yml
+- block: 
     - name: Prepare PostgreSQL | fetch pg_hba.conf file from master
       run_once: true
       fetch:
@@ -604,7 +590,8 @@
   when: existing_pgcluster is defined and existing_pgcluster|bool
         and postgresql_conf_dir != postgresql_data_dir
 
-- block:  # start patroni on replica
+# start patroni on replica
+- block:
     - name: Start Patroni service on Replica servers
       systemd:
         daemon_reload: true

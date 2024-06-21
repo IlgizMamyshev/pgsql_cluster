@@ -33,8 +33,6 @@ restapi:
 #    username: patroni_restapi_username
 #    password: patroni_restapi_password
 
-{% if dcs_type == 'etcd' %}
-
 etcd:
   hosts: {% for host in groups['etcd_cluster'] %}{{ hostvars[host]['ansible_facts'][patroni_etcd_hosts.ifname]['ipv4']['address'] }}:{{ patroni_etcd_hosts.port }}{% if not loop.last %},{% endif %}{% endfor %}
 
@@ -42,21 +40,6 @@ etcd:
   cacert: /etc/patroni/ssl/ca.crt
   cert: /etc/ssl/certs/server.crt
   key: /etc/ssl/private/server.key
-{% else %}
-
-raft:
-  data_dir: {{ patroni_raft_data_dir }}
-  self_addr: {{ hostvars[inventory_hostname]['inventory_hostname'] }}:{{ patroni_raft_port }}
-  {% if is_master == 'true' %}
-  #partner_addrs: # empty, this is first (master) host 
-  {% else %}
-  partner_addrs: 
-  - {{ hostvars[groups['master'][0]].inventory_hostname }}:{{ patroni_raft_port }}
-  {% endif %}
-    {% if patroni_raft_password is defined and patroni_raft_password | length > 0 %}
-  password: {{ patroni_raft_password }}
-    {% endif %}
-{% endif %}
 
 bootstrap:
   method: initdb
@@ -212,4 +195,3 @@ tags:
 
   # specify a node to replicate from (cascading replication)
 #  replicatefrom: (node name)
-

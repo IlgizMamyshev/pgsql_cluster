@@ -2,12 +2,11 @@
 
 # "postgresql_exists='true'" if PostgreSQL is already exists and running
 
-# if dcs_exists: false and dcs_type: "etcd" (in vars/main.yml)
-# ETCD nodes (<hostname|FQDN|IPv4> [ansible_host=<IPv4>]) (set ansible_host only if hostname not resolved, or use /etc/hosts)
+# etcd nodes (<hostname|FQDN|IPv4> [ansible_host=<IPv4>]) (set ansible_host only if hostname not resolved, or use /etc/hosts)
 [etcd_cluster]  # recommendation: 3 or 5-7 nodes
 pgsql-n1.im.local #ansible_host=192.168.10.201
-pgsql-n2.im.local #ansible_host=192.168.10.202
-pgsql-n3.im.local #ansible_host=192.168.10.203
+#pgsql-n2.im.local #ansible_host=192.168.10.202
+#pgsql-n3.im.local #ansible_host=192.168.10.203
 
 # PostgreSQL nodes (<hostname|FQDN|IPv4> postgresql_exists='<false|true>')
 [master]
@@ -19,16 +18,6 @@ pgsql-n3.im.local postgresql_exists='false'
 [postgres_cluster:children]
 master
 replica
-
-# if with_patroni_raft_controller: true (in vars/main.yml)
-[patroni_raft_controller]
-pgsql-n1.im.local
-
-# if with_haproxy_load_balancing: true (in vars/main.yml)
-# HAProxy nodes (IP address (or hostname, not FQDN)) (hostname recommended)
-[balancers]
-pgsql-n2.im.local
-pgsql-n3.im.local
 
 # Connection settings
 [all:vars]

@@ -59,34 +59,6 @@
   ignore_errors: true
 
 - block:
-    - name: PostgreSQL cluster connection info
-      run_once: true
-      debug:
-        msg:
-          - +------------------------------------------------+
-          - DNS Connection Point   {{ dnscp.vcompname }}.{{ dnscp.dnszonefqdn }}
-          - Address (VIP)          {{ cluster_vip }}
-          - Port {{ haproxy_listen_port.master }} (read/write) master
-          - Port {{ haproxy_listen_port.replicas }} (read only)  all replicas
-          - Port {{ haproxy_listen_port.replicas_sync }} (read only)  synchronous replica only
-          - Port {{ haproxy_listen_port.replicas_async }} (read only)  asynchronous replicas only
-          - +------------------------------------------------+
-      when: with_haproxy_load_balancing|bool and
-            synchronous_mode|bool
-
-    - name: PostgreSQL Cluster connection info
-      run_once: true
-      debug:
-        msg:
-          - +------------------------------------------------+
-          - DNS Connection Point   {{ dnscp.vcompname }}.{{ dnscp.dnszonefqdn }}
-          - Address (VIP)          {{ cluster_vip }}
-          - Port {{ haproxy_listen_port.master }} (read/write) master
-          - Port {{ haproxy_listen_port.replicas }} (read only)  all replicas
-          - +------------------------------------------------+
-      when: with_haproxy_load_balancing|bool and
-            not synchronous_mode|bool
-
     - name: PostgreSQL Cluster connection info
       run_once: true
       debug:
@@ -96,12 +68,11 @@
           - Address (VIP)          {{ cluster_vip }}
           - Port {{ postgresql_port }}
           - +------------------------------------------------+
-      when: not with_haproxy_load_balancing|bool
   when: cluster_vip is defined and cluster_vip | length > 0
   ignore_errors: true
 
 - block:
-    - name: Get vip info
+    - name: Get VIP info
       set_fact:
         man_ip: "{{ item }}"
       loop: "{{ ansible_all_ipv4_addresses }}"
@@ -110,45 +81,18 @@
     - name: Virtual IP Address (VIP) info
       debug:
         msg:
-          "Cluster ip address (VIP) {{ cluster_vip }}
+          "Cluster Virtual IP address (VIP) {{ cluster_vip }}
            is running on server {{ ansible_hostname }}"
       when: man_ip is defined and man_ip == cluster_vip
   when: cluster_vip is defined and cluster_vip | length > 0
   ignore_errors: true
 
-
-- block:  # if cluster_vip is not defined
+# if cluster_vip is not defined
+- block:
     - name: Create list of nodes
       run_once: true
       set_fact:
-        haproxy_nodes: "{% for host in groups['balancers'] %}{{ hostvars[host]['inventory_hostname'] }}{% if not loop.last %},{% endif %}{% endfor %}"  # noqa 204
-        postgres_cluster_nodes: "{% for host in groups['postgres_cluster'] %}{{ hostvars[host]['inventory_hostname'] }}{% if not loop.last %},{% endif %}{% endfor %}"  # noqa 204
-
-    - name: PostgreSQL Cluster connection info
-      run_once: true
-      debug:
-        msg:
-          - +------------------------------------------------+
-          - Address {{ haproxy_nodes }}
-          - Port {{ haproxy_listen_port.master }} (read/write) master
-          - Port {{ haproxy_listen_port.replicas }} (read only)  all replicas
-          - Port {{ haproxy_listen_port.replicas_sync }} (read only)  synchronous replica only
-          - Port {{ haproxy_listen_port.replicas_async }} (read only)  asynchronous replicas only
-          - +------------------------------------------------+
-      when: with_haproxy_load_balancing|bool and
-            synchronous_mode|bool
-
-    - name: PostgreSQL Cluster connection info
-      run_once: true
-      debug:
-        msg:
-          - +------------------------------------------------+
-          - Address {{ haproxy_nodes }}
-          - Port {{ haproxy_listen_port.master }} (read/write) master
-          - Port {{ haproxy_listen_port.replicas }} (read only)  all replicas
-          - +------------------------------------------------+
-      when: with_haproxy_load_balancing|bool and
-            not synchronous_mode|bool
+        postgres_cluster_nodes: "{% for host in groups['postgres_cluster'] %}{{ hostvars[host]['inventory_hostname'] }}{% if not loop.last %},{% endif %}{% endfor %}"
 
     - name: PostgreSQL Cluster connection info
       run_once: true
@@ -158,7 +102,6 @@
           - Address {{ postgres_cluster_nodes }}
           - Port {{ postgresql_port }}
           - +------------------------------------------------+
-      when: not with_haproxy_load_balancing|bool
   ignore_errors: true
   when: cluster_vip is not defined or cluster_vip | length < 1
 

@@ -1,6 +1,4 @@
 ---
-# yamllint disable rule:line-length
-# yamllint disable rule:comments-indentation
 
 # Proxy variables (optional) for download packages using a proxy server
 proxy_env: {}
@@ -40,25 +38,11 @@ dnscp:
 
 # DCS (Distributed Consensus Store)
 dcs_exists: true # 'false' or 'true'. Use 'true' if the etcd cluster is already installed.
-dcs_type: "etcd" # "etcd" or "patroni"
 
-# if dcs_exists: false and dcs_type: "patroni"
-patroni_raft_data_dir: "/etc/patroni" #"/var/lib/raft"
-patroni_raft_port: "2379"
-patroni_raft_password: "Password4" # Key to encrypt Patroni raft traffic
-
-# if dcs_exists: false and dcs_type: "patroni"
-with_patroni_raft_controller: true # 'false' or 'true' if you want to install and configure the Patroni RAFT Controller
-patroni_raft_controller:
-  host: "{{ hostvars[groups['patroni_raft_controller'][0]].inventory_hostname }}" # hostname or IP
-  port: "{{ patroni_raft_port }}"
-
-# if dcs_exists: false and dcs_type: "etcd"
 etcd_ver: "v3.5.6" # version for deploy etcd cluster
 etcd_data_dir: "/var/lib/etcd"
 etcd_cluster_name: "etcd-{{ patroni_cluster_name }}"  # ETCD_INITIAL_CLUSTER_TOKEN
 
-# if dcs_exists: true and dcs_type: "etcd"
 patroni_etcd_hosts:
   port: "2379"
   protocol: "https" # current solution support only https (Mutual TLS)
@@ -66,22 +50,6 @@ patroni_etcd_hosts:
 
 # more options you can specify in the roles/patroni/templates/patroni.yml.j2
 # https://patroni.readthedocs.io/en/latest/SETTINGS.html#etcd
-
-# Load Balancing
-with_haproxy_load_balancing: false  # 'false' or 'true' if you want to install and configure the load-balancing
-haproxy_listen_port:
-  master: 5000
-  replicas: 5001
-  replicas_sync: 5002
-  replicas_async: 5003
-  stats: 7000
-haproxy_maxconn:
-  global: 100000
-  master: 10000
-  replica: 10000
-haproxy_timeout:
-  client: "60m"
-  server: "60m"
 
 # PostgreSQL variables
 postgresql_fork: "PostgreSQL" # "PostgreSQL" or "PostgresPro"
@@ -95,6 +63,20 @@ postgresql_data_checksums: true  # for bootstrap only (initdb)
 postgresql_allow_group_access: false # for bootstrap only (initdb)
 postgresql_password_encryption_algorithm: "scram-sha-256"  # or "md5" if your clients do not work with passwords encrypted with SCRAM-SHA-256
 
+# (optional) list of users to be created (if not already exists)
+postgresql_users:
+  - { name: "monitoring", password: "P@ssw0rd", flags: "LOGIN", role: "pg_monitor, pg_read_server_files" } # monitoring Service Account
+  - { name: "sa", password: "P@ssw0rd", flags: "SUPERUSER" }
+#  - { name: "", password: "", flags: "NOSUPERUSER" }
+#  - { name: "", password: "", flags: "NOSUPERUSER" }
+#  - { name: "", password: "", flags: "NOLOGIN" }
+
+# (optional) list of database extensions to be created (if not already exists)
+postgresql_extensions:
+  - { ext: "pg_stat_statements", db: "postgres" }
+#  - { ext: "pg_stat_statements", db: "mydatabase", schema: "myschema" }
+#  - { ext: "pg_repack", db: "" }  # postgresql-<version>-repack package is required
+#  - { ext: "pg_stat_kcache", db: "" }  # postgresql-<version>-pg-stat-kcache package is required
 
 # postgresql parameters to bootstrap dcs (are parameters for example)
 postgresql_parameters:
@@ -102,14 +84,14 @@ postgresql_parameters:
   - {option: "superuser_reserved_connections", value: "5"}
   - {option: "password_encryption", value: "{{ postgresql_password_encryption_algorithm }}"}
   - {option: "deadlock_timeout", value: "5s"}  # 1s is default
-  - {option: "max_locks_per_transaction", value: "256"}  # raise this value (ex. 512) if you have queries that touch many different tables (partitioning)
+  - {option: "max_locks_per_transaction", value: "512"}  # raise this value (ex. 512) if you have queries that touch many different tables (partitioning)
   - {option: "max_prepared_transactions", value: "0"}
   - {option: "huge_pages", value: "try"}  # or "on" if you set "vm_nr_hugepages" in kernel parameters
   - {option: "huge_page_size", value: "0"} # 0 is default
   - {option: "shared_buffers", value: "4GB"} # shared_buffers = 25%-40% of RAM
   - {option: "work_mem", value: "256MB"}  # work_mem = RAM/32..64
   - {option: "maintenance_work_mem", value: "1GB"}  # maintenance_work_mem = work_mem*4
-  - {option: "effective_cache_size", value: "4GB"}  # effective_cache_size = RAM - shared_buffers
+  - {option: "effective_cache_size", value: "12GB"}  # effective_cache_size = RAM - shared_buffers
   - {option: "checkpoint_timeout", value: "30min"} # 5min is default
   - {option: "checkpoint_completion_target", value: "0.9"}
   - {option: "min_wal_size", value: "2GB"}
@@ -118,9 +100,11 @@ postgresql_parameters:
   - {option: "temp_buffers", value: "32MB"} # 8MB is default
   - {option: "default_statistics_target", value: "100"}
   - {option: "seq_page_cost", value: "1"} # "1" is default, "0.5" for fast SSD storage , "0.1" for NVMe storage.
-  - {option: "random_page_cost", value: "2.0"}  # "4" is default, "1.5-2.0" for HDD RAID storage, "1.1-1.3" for SSD storage, "0.5" for fast SSD storage , "0.1" for NVMe storage.
-  - {option: "effective_io_concurrency", value: "4"}  # "1" default, "2+" for HDD RAID, "200" for SSD storage, "500-1000" for NVMe storage.
-  - {option: "synchronous_commit", value: "on"}  # or 'off' if you can you lose single transactions in case of a crash
+  - {option: "random_page_cost", value: "1.3"}  # "4" is default, "1.5-2.0" for HDD RAID storage, "1.1-1.3" for SSD storage, "0.5" for fast SSD storage , "0.1" for NVMe storage.
+  - {option: "effective_io_concurrency", value: "200"}  # "1" default, "2+" for HDD RAID, "200" for SSD storage, "500-1000" for NVMe storage.
+  - {option: "synchronous_commit", value: "on"}  # or 'off' if you can you lose single transactions in case of a crash. Относительно безопасная альтернатива отключению fsync.
+  - {option: "fsync", value: "on"} # Заставляет сервер добиваться физической записи изменений на диск. Выключение опции позволяет повысить производительность, но значительно увеличивает риск неисправимой порчи данных при внезапном выключении питания.
+  - {option: "wal_sync_method", value: "fdatasync"} # Следует уточнить оптимальное значение для фактической дисковой подсистемы под WAL опытным путём в ходе развёртывания утилитой pg_test_fsync
   - {option: "autovacuum", value: "on"}  # never turn off the autovacuum!
   - {option: "autovacuum_max_workers", value: "10"} # 3 is default. autovacuum_max_workers = NumCores/4..2 , but >= 4
   - {option: "autovacuum_vacuum_scale_factor", value: "0.05"}  # or 0.005/0.001
@@ -131,7 +115,7 @@ postgresql_parameters:
   - {option: "autovacuum_vacuum_threshold", value: "25"} # 50 is default
   - {option: "max_files_per_process", value: "4096"} # 1000 is default
   - {option: "archive_mode", value: "on"}
-  - {option: "archive_timeout", value: "1800s"}
+  - {option: "archive_timeout", value: "180s"}
   - {option: "archive_command", value: "cd ."}  # not doing anything yet with WAL-s
   - {option: "wal_level", value: "replica"}
   - {option: "wal_keep_size", value: "8GB"} # 0 is default

@@ -1,93 +1,103 @@
 ---
-# yamllint disable rule:line-length
 
-- name: "Deploy PostgreSQL HA Cluster based on Patroni with DNS Connection Point"
-  hosts: localhost
-  gather_facts: false
-  vars_files:
-    - vars/main.yml
-  vars:
-    minimal_ansible_version: 2.7.0
-  tasks:
-    - name: "Checking Ansible version"
-      fail:
-        msg: "Ansible version must be {{ minimal_ansible_version }} or higher"
-      when: ansible_version.full is version(minimal_ansible_version, '<')
-
-- name: "Gathering facts from servers"
-  hosts: all,!etcd_cluster
-  gather_facts: true
-
-#- import_playbook: deploy_etcdcluster.yml
-#  when: dcs_exists|bool == false and dcs_type == "etcd" # не работает
-- name: "ETCD cluster"
-  hosts: etcd_cluster
+- name: Deploy PostgreSQL HA Cluster (based on Patroni with DNS Connection Point)
+  hosts: all
   become: true
   become_method: sudo
-  gather_facts: false
+  gather_facts: true
+  tags: always
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
+  environment: "{{ proxy_env | default({}) }}"
+
+  pre_tasks:
+#    - name: "Set variable: ansible_python_interpreter"
+#      ansible.builtin.set_fact:
+#        ansible_python_interpreter: "/usr/bin/env python3"
+#      when: "'python3' not in (ansible_python_interpreter | default(''))"
+#      tags: always
+
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
+    - name: Include system variables
+      ansible.builtin.include_vars: "vars/system.yml"
+      tags: always
+
+    - name: Include Astra Linux specific variables
+      include_vars: "vars/{{ ansible_os_family }}.yml"
+      when: ansible_os_family is search("Astra Linux")
+
+    - name: Include OS-specific variables
+      include_vars: "vars/{{ ansible_os_family }}.yml"
+      when: not ansible_os_family == 'Rocky' and not ansible_os_family == 'AlmaLinux'
+
+  roles:
+    - role: pre-checks
+      vars:
+        minimal_ansible_version: 2.7.0
+      tags: always
+
   tasks:
-    - name: "Gathering some facts from ETCD servers"
-      setup:
-        gather_subset: all
-      when: dcs_type == "etcd"
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      when: ansible_os_family == "Debian"
 
-    - name: "Check ETCD cluster is healthy"
-      command: /usr/local/bin/etcdctl --ca-file="/etc/etcd/ssl/ca.crt" --endpoints {{ patroni_etcd_hosts.protocol }}://127.0.0.1:{{ patroni_etcd_hosts.port }} --cert-file=/etc/etcd/ssl/server.crt --key-file=/etc/etcd/ssl/server.key cluster-health
-      environment:
-        ETCDCTL_API: 2
-      register: etcd_health_result
-      run_once: true
-      changed_when: false
-      until: "'cluster is healthy' in etcd_health_result.stdout"
-      retries: 1000
-      delay: 10
-      ignore_errors: false
-      when: dcs_exists|bool == true and dcs_type == "etcd"
+    - name: Make sure the gnupg and apt-transport-https packages are present
+      ansible.builtin.apt:
+        pkg:
+          - gnupg
+          - apt-transport-https
+        state: present
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      when: ansible_os_family == "Debian"
 
-    - name: "Cluster health"
-      run_once: true
-      debug:
-        var: etcd_health_result.stdout_lines
-      when: dcs_exists|bool == true and dcs_type == "etcd"
 
-    - name: "ETCD not deployed"
-      fail:
-        msg: "Deploy ETCD Cluster first! Run: ansible-playbook etcd_cluster.yml -K"
-      when: dcs_exists|bool == false and dcs_type == "etcd"
-
-    - name: "ETCD not required"
-      run_once: true
-      debug:
-        msg: "Skipping.."
-      when: dcs_type != "etcd"
+# Deploy etcd cluster
+- name: deploy_pgcluster.yml | Deploy etcd cluster
+  ansible.builtin.import_playbook: deploy_etcdcluster.yml
+  tags: etcd
 
 # SSL: Obtaining the Private IP Addresses of Managed Nodes
 - hosts: postgres_cluster
   become: true
   become_method: sudo
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
   tasks:
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
     - shell: ip -f inet addr show "{{ postgresql_ifname }}" | sed -En -e 's/.*inet ([0-9.]+).*/\1/p'
       register: patroni_privateIP
 
 # PKI
-- hosts: localhost
+- name: deploy_pgcluster.yml | Deploy CA if ca.key file non exist
+  hosts: localhost
   gather_facts: false
   become: true
   become_method: sudo
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
+
   pre_tasks:
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
     - name: "Check for CA private key exists.."
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.key"
       register: pki_ca_key
+
     - name: "File exist"
       debug:
         msg: "ca.key exist, deploy new Root CA skipping"
@@ -97,6 +107,7 @@
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.crt"
       register: pki_ca_cert
+
     - name: "File not exist"
       debug:
         msg: "ca.crt not exist"
@@ -108,13 +119,17 @@
     - role: install-root-cert
 
 # SSL: Generating Patroni cluster members’ Private Keys and CSRs
-- hosts: localhost
+- name: deploy_pgcluster.yml | Generating Patroni cluster members’ Private Keys and CSRs
+  hosts: localhost
   gather_facts: false
   become: true
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
+
   tasks:
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
     - name: "Generate private key for each member"
       openssl_privatekey:
         path: "{{ pki_cert_artifacts_dir }}/{{item}}.key"
@@ -151,50 +166,46 @@
         force: true
       with_items: "{{ groups['postgres_cluster'] }}"
 
-- hosts: postgres_cluster
+- name: deploy_pgcluster.yml | PostgreSQL Cluster Configuration
+  hosts: postgres_cluster
   become: true
   become_method: sudo
   gather_facts: true
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-    - vars/system.yml
 
   pre_tasks:
-    - name: "Set Astra Linux specific variables"
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
+    - name: Include system variables
+      ansible.builtin.include_vars: "vars/system.yml"
+      tags: always
+
+    - name: Include Astra Linux specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
       when: ansible_os_family is search("Astra Linux")
 
-    - name: "Include OS-specific variables"
+    - name: Include OS-specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
       when: not ansible_os_family == 'Rocky' and not ansible_os_family == 'AlmaLinux'
 
-    - name: "Include PostgreSQL-specific variables"
+    - name: Include PostgreSQL-specific variables
       include_vars: "vars/postgres/PostgreSQL.yml"
       when: postgresql_fork != 'PostgresPro'
 
-    - name: "Include PostgresPro-specific variables"
+    - name: Include PostgresPro-specific variables
       include_vars: "vars/postgres/PostgresPro.yml"
       when: postgresql_fork == 'PostgresPro'
 
-    - name: "Checking Linux distribution"
-      fail:
-        msg: "{{ ansible_distribution }} is not supported"
-      when: ansible_distribution not in os_valid_distributions
-
-    - name: "Checking version of OS Linux"
-      fail:
-        msg: "{{ ansible_distribution_version }} of {{ ansible_distribution }} is not supported"
-      when: ansible_distribution_version is version_compare(os_minimum_versions[ansible_distribution], '<')
-
-    - name: "Update apt cache"
+    - name: Update apt cache
       apt:
         update_cache: true
         cache_valid_time: 3600
       environment: "{{ proxy_env | default({}) }}"
       when: ansible_os_family == "Debian"
 
-    - name: "Make sure the gnupg and apt-transport-https packages are present"
+    - name: Make sure the gnupg and apt-transport-https packages are present
       apt:
         pkg:
           - gnupg
@@ -203,24 +214,27 @@
       environment: "{{ proxy_env | default({}) }}"
       when: ansible_os_family == "Debian"
 
-    - name: "Build a firewall_ports_dynamic_var"
+    - name: Build a firewall_ports_dynamic_var
       set_fact:
-        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var |default([]) }} + {{ firewall_allowed_tcp_ports_for[item] }}"
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
       loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot|bool
+      when: firewall_enabled_at_boot | bool
+      tags: firewall
 
-    - name: "Build a firewall_rules_dynamic_var"
+    - name: Build a firewall_rules_dynamic_var
       set_fact:
-        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var |default([]) }} + {{ firewall_additional_rules_for[item] }}"
+        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
       loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot|bool
+      when: firewall_enabled_at_boot | bool
+      tags: firewall
   roles:
     - role: ansible-role-firewall
       environment: "{{ proxy_env | default({}) }}"
       vars:
-        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var|list | unique }}"
-        firewall_additional_rules: "{{ firewall_rules_dynamic_var|list | unique }}"
-      when: firewall_enabled_at_boot|bool
+        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
+        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
+      when: firewall_enabled_at_boot | bool
+      tags: firewall
 
     - role: io-scheduler
     - role: packages
@@ -235,69 +249,57 @@
       when: cluster_vip is defined and cluster_vip | length > 0
     - role: install-root-cert
 
-- import_playbook: balancers.yml
-  when: with_haproxy_load_balancing|bool
-
-- hosts: postgres_cluster
+- name: deploy_pgcluster.yml | PostgreSQL Cluster Deployment
+  hosts: postgres_cluster
   become: true
   become_method: sudo
   gather_facts: true
   any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-    - vars/system.yml
 
   pre_tasks:
-    - name: "Set Astra Linux specific variables"
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+      tags: always
+
+    - name: Include system variables
+      ansible.builtin.include_vars: "vars/system.yml"
+      tags: always
+
+    - name: Include Astra Linux specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
       when: ansible_os_family is search("Astra Linux")
 
-    - name: "Include OS-specific variables"
+    - name: Include OS-specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
       when: not ansible_os_family == 'Rocky' and not ansible_os_family == 'AlmaLinux'
 
-    - name: "Include PostgreSQL-specific variables"
+    - name: Include PostgreSQL-specific variables
       include_vars: "vars/postgres/PostgreSQL.yml"
       when: postgresql_fork != 'PostgresPro'
 
-    - name: "Include PostgresPro-specific variables"
+    - name: Include PostgresPro-specific variables
       include_vars: "vars/postgres/PostgresPro.yml"
       when: postgresql_fork == 'PostgresPro'
 
   roles:
     - role: patroni
 
-  # After deploy Patroni hosts with PostgreSQL
-- import_playbook: patroni_raft_controller.yml
-  when: with_patroni_raft_controller|bool == true and dcs_exists|bool == false
+    # optional
+    - role: postgresql-users
+      when: is_master | bool and postgresql_users | length > 0
 
-- hosts: postgres_cluster
-  become: true
-  become_method: sudo
-  gather_facts: true
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-    - vars/system.yml
+#    - role: postgresql-databases
+#      when: is_master | bool and postgresql_databases | length > 0
 
-  pre_tasks:
-    - name: "Set Astra Linux specific variables"
-      include_vars: "vars/{{ ansible_os_family }}.yml"
-      when: ansible_os_family is search("Astra Linux")
+#    - role: postgresql-schemas
+#      when: is_master | bool and postgresql_schemas | length > 0
 
-    - name: "Include OS-specific variables"
-      include_vars: "vars/{{ ansible_os_family }}.yml"
-      when: not ansible_os_family == 'Rocky' and not ansible_os_family == 'AlmaLinux'
+    - role: postgresql-extensions
+      when: is_master | bool and postgresql_extensions | length > 0
 
-    - name: "Include PostgreSQL-specific variables"
-      include_vars: "vars/postgres/PostgreSQL.yml"
-      when: postgresql_fork != 'PostgresPro'
+#    - role: pgbouncer/config
+#      when: pgbouncer_install|bool
 
-    - name: "Include PostgresPro-specific variables"
-      include_vars: "vars/postgres/PostgresPro.yml"
-      when: postgresql_fork == 'PostgresPro'
-
-  roles:
     # finish (info)
     - role: deploy-finish
 ...

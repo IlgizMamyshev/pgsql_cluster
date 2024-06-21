@@ -7,7 +7,7 @@
 
 readonly productname="DNS Connection Point for Patroni";
 readonly giturl="https://github.com/IlgizMamyshev/dnscp";
-readonly version="18012023";
+readonly version="20062024";
 
 ### Script for Patroni clusters
 # Script Features:
@@ -29,6 +29,7 @@ readonly version="18012023";
 
 ### Operation System prerequisites
 # * Astra Linux (Debian or compatible)
+# * Red Hat Enterprise Linux
 
 ### PostgreSQL prerequisites
 # For any virtual IP based solutions to work in general with Postgres you need to make sure that it is configured to automatically scan and bind to all found network interfaces. So something like * or 0.0.0.0 (IPv4 only) is needed for the listen_addresses parameter to activate the automatic binding. This again might not be suitable for all use cases where security is paramount for example.
@@ -44,13 +45,15 @@ readonly version="18012023";
 # Scenario 1 (AD DNS ans secure DNS update):
 #   * Patroni hosts must be joined to Active Directory Domain
 #       For expample: Join Astra Linux to Active Directory https://wiki.astralinux.ru/pages/viewpage.action?pageId=27361515
-#           sudo apt-get install astra-winbind && sudo astra-winbind -dc dc1.example.ru -u Administrator -px
+#           sudo apt-get install astra-ad-sssd-client && astra-ad-sssd-client -d example.ru -u Administrator@example.ru -px
 #   * Create Active Directory Computer Account (will be used as network name for client access) in any way, for example (PowerShell, from domain joined Windows Server): New-ADComputer pgsql
 #   * Set new password for Computer Account, for example (PowerShell): Get-ADComputer pgsql | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "P@ssw0rd" -Force)
 # Scenario 2 (Non-secure DNS update):
 #   * Microsoft DNS Server and DNS-zone with allow non-secure DNS update.
 # Common:
-#   * Install nsupdate utility: sudo apt-get install dnsutils
+#   * Install nsupdate utility for Debian: sudo apt-get install dnsutils
+#   * Install nsupdate utility for Red Hat: sudo yum install bind-utils
+#   * Install arping utility: sudo apt-get install iputils-arping
 
 #####################################################
 # Set variable defaults
@@ -88,8 +91,10 @@ echo "      Specify the TTL=30 for multi-site clusters (recommended).";
 echo "  -pwdfile {passwordfile}";
 echo "      Path to the file with password for Virtual Computer Name account in Active Directory\SAMBA.";
 echo "      Virtual Computer Name = Patroni Cluster Name. The default is '' (empty). Do not specify for non-secure DNS update.";
-echo "  -V";
+echo "  -verbose";
 echo "      Verbose mode.";
+echo "  -version";
+echo "      Show version.";
 echo "  -vips {address[,address..]}";
 echo "      One VIP (IPv4) address (or some VIP addresses in different subnets, separated by commas, for example: '10.0.1.10,10.0.2.10').";
 exit 1; }
@@ -156,10 +161,11 @@ while [ -n "$1" ]
 do
 case "$1" in
 -h | --help) usage; ;;
+--version) echo "$productname $version"; exit; ;;
 -D) DEBUG=1
-shift ;;
--V) VERBOSE=1
-shift ;;
+;;
+-verbose) VERBOSE=1
+;;
 -vips) VIPs="$2"
 shift ;;
 -pwdfile) if [[ "" == "$2" ]]; then
@@ -203,6 +209,21 @@ if [[ $DEBUG -eq 1 ]]; then
 fi
 
 #####################################################
+# Check OS
+#####################################################
+case "$(hostnamectl | awk -F": " '{if ($1 ~ "Operating System") print tolower($2)}')" in
+    *"astra"* | *"debian"* )
+        OS=1;
+        ;;
+    *"red hat"* )
+        OS=2;
+        ;;
+    * )
+        OS=1;
+        ;;
+esac
+
+#####################################################
 # Check prerequisites
 #####################################################
 ## VIPs defined?
@@ -228,19 +249,54 @@ if [[ ! -z $VCompPassword ]]; then
 fi
 
 ## package is installed?
-REQUIRED_PKG="dnsutils"
-PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
-if [[ "" == "$PKG_OK" ]]; then
-    echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
-    #sudo apt-get --yes install $REQUIRED_PKG #Setting up $REQUIRED_PKG
-    exit 1; # Exit with error
-else
-    # Detect DNS Server
-    if [[ "" == "$DNSserver" ]] && [[ "OK" == "$JOINED_OK" ]]; then
-        DNSserver=$(sudo net ads info | awk -F": " '{if ($1 == "LDAP server name") print $2}') # AD DS logon DC
-        if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS Server is $DNSserver"; fi
-    fi
-fi
+case $OS in
+    1 )
+        # debian
+        REQUIRED_PKG="iputils-arping";
+        PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
+        if [[ "" == "$PKG_OK" ]]; then
+            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
+            PKG_OK=""
+        else
+            PKG_OK=""
+        fi
+
+        REQUIRED_PKG="dnsutils"
+        PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
+        if [[ "" == "$PKG_OK" ]]; then
+            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
+            #sudo apt-get --yes install $REQUIRED_PKG #Setting up $REQUIRED_PKG
+            exit 1; # Exit with error
+        else
+            # Detect DNS Server
+            if [[ "" == "$DNSserver" ]] && [[ "OK" == "$JOINED_OK" ]]; then
+                DNSserver=$(sudo net ads info | awk -F": " '{if ($1 == "LDAP server name") print $2}') # AD DS logon DC
+                if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS Server is $DNSserver"; fi
+            fi
+        fi
+        ;;
+    2 )
+        # rhel
+        REQUIRED_PKG="arping";
+        # without checking
+
+        REQUIRED_PKG="bind-utils"
+        PKG_OK=$(rpm -qa $REQUIRED_PKG)
+        if [[ "" == "$PKG_OK" ]]; then
+            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
+            #sudo yum --yes install $REQUIRED_PKG #Setting up $REQUIRED_PKG
+            exit 1; # Exit with error
+        else
+            # Detect DNS Server
+            if [[ "" == "$DNSserver" ]] && [[ "OK" == "$JOINED_OK" ]]; then
+                DNSserver=$(sudo net ads info | awk -F": " '{if ($1 == "LDAP server name") print $2}') # AD DS logon DC
+                if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS Server is $DNSserver"; fi
+            fi
+        fi
+        ;;
+    * )
+        ;;
+esac
 
 # Set failsafe value
 if [[ "" == "$DNSserver" ]] && [[ "" != "$DNSzoneFQDN" ]]; then
@@ -253,7 +309,7 @@ if [[ "" == "$DNSzoneFQDN" ]] || [[ "" == "$DNSserver" ]] || [[ "" == "$VCompNam
     if [[ "" == "$DNSzoneFQDN" ]]; then MSG="$MSG${MSGSEPARATOR}DNSzoneFQDN"; MSGSEPARATOR=", "; fi
     if [[ "" == "$DNSserver" ]]; then MSG="$MSG${MSGSEPARATOR}DNSserver"; MSGSEPARATOR=", "; fi
     if [[ "" == "$VCompName" ]]; then MSG="$MSG${MSGSEPARATOR}$MSGVCompName"; MSGSEPARATOR=", "; fi
-    echo "[$LOGHEADER] INFO: DNSCP does not know about $MSG. Only VIPs wil be managed.";
+    echo "[$LOGHEADER] INFO: DNSCP does not know about $MSG. Only VIPs will be managed.";
 fi
 
 readonly VCompNameFQDN=$VCompName.$DNSzoneFQDN
@@ -301,7 +357,7 @@ else
             fi
             ;;
         on_start|on_role_change|on_schedule )
-            if [[ $ROLE == 'master' ]]; then
+            if [[ $ROLE == 'master' ]] || [[ $ROLE == 'primary' ]]; then
                 #####################################################
                 # Add service_ip if not exists
                 #####################################################
@@ -312,6 +368,32 @@ else
                         echo "[$LOGHEADER] INFO: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED";
                     else
                         echo "[$LOGHEADER] ERROR: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE.";
+                    fi
+                    
+                    #####################################################
+                    # Sends a gratuitous ARP request and reply
+                    #  * While RFC 2002 does not say whether a gratuitous ARP request or reply is preferred
+                    #     to update ones neighbours' MAC tables, the Wireshark Wiki recommends sending both.
+                    #     https://wiki.wireshark.org/Gratuitous_ARP
+                    #  * This site also recommends sending a reply, as requests might be ignored by some hardware:
+                    #     https://support.citrix.com/article/CTX112701
+                    #####################################################
+                    # ARP REQUEST packets
+                    sudo arping -c 4 -f -U -I $IFNAME -s $VIP $VIP
+                    EXITCODE=$?;
+                    if [[ $EXITCODE -eq 0 ]]; then
+                        echo "[$LOGHEADER] INFO: Gratuitous ARP request SUCCEEDED";
+                    else
+                        echo "[$LOGHEADER] ERROR: Gratuitous ARP request package is malformed: $EXITCODE.";
+                    fi
+                    
+                    # ARP REPLY packets
+                    sudo arping -c 4 -f -A -I $IFNAME -s $VIP $VIP
+                    EXITCODE=$?;
+                    if [[ $EXITCODE -eq 0 ]]; then
+                        echo "[$LOGHEADER] INFO: Gratuitous ARP reply SUCCEEDED";
+                    else
+                        echo "[$LOGHEADER] ERROR: Gratuitous ARP reply package is malformed: $EXITCODE.";
                     fi
                 else
                     if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP already present, no action required."; fi
@@ -338,7 +420,7 @@ else
                 fi
             fi
 
-            if [[ $ROLE == 'master' ]] || ( [[ $ROLE == 'registerdns' ]] && [[ "" != "$(ip address | awk '/'$VIP'/{print $0}')" ]] ); then
+            if ([[ $ROLE == 'master' ]] || [[ $ROLE == 'primary' ]]) || ( [[ $ROLE == 'registerdns' ]] && [[ "" != "$(ip address | awk '/'$VIP'/{print $0}')" ]] ); then
             #####################################################
             # Register DNS
             #####################################################
@@ -390,7 +472,7 @@ else
                 fi
             else
                 # service_ip exists - Add cron task for Dynamic DNS Updates
-                sudo crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * sudo $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName" | sudo crontab -u $(whoami) -
+                sudo crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName" | sudo crontab -u $(whoami) -
                 echo "[$LOGHEADER] INFO: 'Dynamic DNS Update' cron task for $(whoami) user (re)enabled.";
             fi
             ;;
