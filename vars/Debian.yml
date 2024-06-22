@@ -45,6 +45,8 @@ system_packages:
   - dnsutils
 # optional packages
   - htop
+  - jq
+  - curl
 
 # Extra packages
 etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/{{ etcd_ver }}/etcd-{{ etcd_ver }}-linux-amd64.tar.gz"

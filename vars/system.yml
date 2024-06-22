@@ -108,16 +108,16 @@ firewall_allowed_tcp_ports_for:
     - "{{ postgresql_port }}"
     - "{{ patroni_restapi_port }}"  # Patroni REST API port
 #    - "3389"  # RDP
-    - "445"  # SMB
-    - "10050"  # Zabbix agent
+#    - "445"  # SMB
+#    - "10050"  # Zabbix agent
+    - "9090"   # Prometheus Exporter metrics
+    - "9890"   # pgSCV Exporter metrics
   etcd_cluster:
     - "{{ ansible_ssh_port | default(22) }}"
     - "2379"
     - "2380"
 #    - "3389"  # RDP
-    - "10050"  # Zabbix agent
-    - "9090"   # Prometheus Exporter metrics
-    - "9890"   # pgSCV Exporter metrics
+#    - "10050"  # Zabbix agent
 
 firewall_additional_rules_for:
   master: []

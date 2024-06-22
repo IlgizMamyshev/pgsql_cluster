@@ -7,7 +7,7 @@
 
 readonly productname="DNS Connection Point for Patroni";
 readonly giturl="https://github.com/IlgizMamyshev/dnscp";
-readonly version="20062024";
+readonly version="23062024";
 
 ### Script for Patroni clusters
 # Script Features:
@@ -15,20 +15,23 @@ readonly version="20062024";
 # * Remove VIP address from network interface if Patroni stop or switch to non-Leader role
 # * Register\Update DNS A-record for PostgreSQL client access
 
-### Installing script
+### Installation
 # * Enable using callbacks in Patroni configuration (/etc/patroni/patroni.yml):
 #postgresql:
 #  callbacks:
 #    on_start: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
-#    on_stop: /etc/patroni/dnscp.sh "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
-#    on_role_change: /etc/patroni/dnscp.sh "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
+#    on_stop:  "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
+#    on_role_change: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
 # * Put script to "/etc/patroni/dnscp.sh" and set executable (adds the execute permission for all users to the existing permissions.):
 #   sudo mv dnscp.sh /etc/patroni/dnscp.sh && sudo chmod ugo+x /etc/patroni/dnscp.sh
 # * View command for dnsupdate:
 #   sudo cat /var/spool/cron/crontabs/postgres
 
-### Operation System prerequisites
-# * Astra Linux (Debian or compatible)
+### Operation Systems supported
+# * Astra Linux
+# * RED OS
+# * Debian
+# * Ubuntu
 # * Red Hat Enterprise Linux
 
 ### PostgreSQL prerequisites
@@ -351,7 +354,7 @@ else
                 fi
 
                 # Remove cron task
-                sudo crontab -u $(whoami) -l | grep -v "$0" | sudo crontab -u $(whoami) -
+                crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
             else
                 if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP not exist, no action required."; fi
             fi
@@ -414,7 +417,7 @@ else
                     fi
 
                     # Remove cron task
-                    sudo crontab -u $(whoami) -l | grep -v "$0" | sudo crontab -u $(whoami) -
+                    crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
                 else
                     if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP not exist, no action required."; fi
                 fi
@@ -463,7 +466,7 @@ else
             # Enable DNS Update cron task if service_ip exists
             #####################################################
             # Remove cron task
-            sudo crontab -u $(whoami) -l | grep -v "$0" | sudo crontab -u $(whoami) -
+            crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
             if [[ -z $(ip address | awk '/'$VIP'/{print $0}') ]]; then
                 # service_ip not exists
                 if [[ $VERBOSE -eq 1 ]]; then
@@ -472,7 +475,7 @@ else
                 fi
             else
                 # service_ip exists - Add cron task for Dynamic DNS Updates
-                sudo crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName" | sudo crontab -u $(whoami) -
+                (crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName") | crontab -u $(whoami) -
                 echo "[$LOGHEADER] INFO: 'Dynamic DNS Update' cron task for $(whoami) user (re)enabled.";
             fi
             ;;

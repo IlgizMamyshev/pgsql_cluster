@@ -97,11 +97,13 @@ bootstrap:
 
 
 postgresql:
+  listen: 0.0.0.0:{{ postgresql_port }}
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
-  listen: {{ hostvars[inventory_hostname]['ansible_facts'][postgresql_ifname]['ipv4']['address'] }},{{ cluster_vip }},127.0.0.1:{{ postgresql_port }}
+#  listen: {{ hostvars[inventory_hostname]['ansible_facts'][postgresql_ifname]['ipv4']['address'] }},{{ cluster_vip }},127.0.0.1:{{ postgresql_port }}
 {% else %}
-  listen: {{ hostvars[inventory_hostname]['ansible_facts'][postgresql_ifname]['ipv4']['address'] }},127.0.0.1:{{ postgresql_port }}
+#  listen: {{ hostvars[inventory_hostname]['ansible_facts'][postgresql_ifname]['ipv4']['address'] }},127.0.0.1:{{ postgresql_port }}
 {% endif %}
+
   connect_address: {{ hostvars[inventory_hostname]['ansible_facts'][postgresql_ifname]['ipv4']['address'] }}:{{ postgresql_port }}
 {% if patroni_superuser_username == 'postgres' %}
   use_unix_socket: true
