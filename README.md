@@ -37,7 +37,7 @@
 #### Компоненты высокой доступности:
 [**Patroni**](https://github.com/zalando/patroni) - это шаблон для создания решения высокой доступности с использованием Python и распределенного хранилища конфигурации, [*собственного*](https://github.com/zalando/patroni/pull/375) или такого как ZooKeeper, etcd, Consul или Kubernetes. Используется для автоматизации управления экземплярами PostgreSQL и автоматического аварийного переключения.
 
-:white_check_mark: протестировано: `Patroni 2.1.7`
+:white_check_mark: протестировано: `Patroni 2.1.7, 3.0.0`
 
 [**etcd**](https://github.com/etcd-io/etcd) - это распределенное надежное хранилище ключей и значений для наиболее важных данных распределенной системы. etcd написан на Go и использует алгоритм консенсуса [Raft](https://raft.github.io/) для управления высокодоступным реплицированным журналом. Он используется Patroni для хранения информации о состоянии кластера и параметрах конфигурации PostgreSQL.
 
@@ -79,7 +79,6 @@ Ansible ([Что такое Ansible](https://www.ansible.com/resources/videos/qu
 - `5432` (PostgreSQL)
 - `8008` (Patroni Rest API)
 - `2379`, `2380` (etcd)
-- `2379` (Patroni RAFT)
 
 #### Связанные ссылки:
 - [Планирование портов и протоколов](/doc/protocol_workloads.md)
@@ -90,10 +89,6 @@ Ansible ([Что такое Ansible](https://www.ansible.com/resources/videos/qu
 Обновите все операционные системы перед развёртыванием;
 
 Присоедините серверы-узлы кластера СУБД к домену [Microsoft Active Directory](https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview) или [Astra Linux Directory](https://wiki.astralinux.ru/display/doc/Astra+Linux+Directory). Присоединение к домену является требованием, если вы хотите использовать аутентифицированный доступ к DNS-серверу при регистрации DNS-имени точки клиентского доступа.
-
-- **Patroni RAFT**: 
-
-Patroni может не зависеть от сторонних систем DCS (Distributed Consensus Store, типа etcd, Consul, ZooKeeper) за счёт собственной реализации [RAFT](https://patroni.readthedocs.io/en/latest/SETTINGS.html#raft-settings).
 
 - **DCS (Распределённое Хранилище Конфигурации (Distributed Configuration Store))**: 
 
@@ -204,16 +199,6 @@ sudo grep -i callback /var/log/syslog
 ```
 sudo cat /var/spool/cron/crontabs/postgres
 ```
-
-##### RAFT
-```
-sudo syncobj_admin -conn pgsql-n2:2379 -pass Password -status
-```
-
-### HA Proxy
-##### Статистика
-`http://pgsql-n2.im.local:7000` \
-`http://pgsql-n3.im.local:7000`
 
 ### PostgreSQL
 ##### Журнал событий
