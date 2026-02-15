@@ -9,7 +9,6 @@
   loop: "{{ system_packages }}"
   environment: "{{ proxy_env | default({}) }}"
   when: ansible_os_family == "Debian"
-  tags: install_packages
 
 # PostgreSQL prepare for install (for Debian based only)
 - block:
@@ -30,7 +29,6 @@
         dest: /etc/logrotate.d/postgresql-common
         state: absent
   when: ansible_os_family == "Debian"
-  tags: install_postgres
 
 # Install PostgreSQL from repository
 # Debian
@@ -41,6 +39,5 @@
   loop: "{{ postgresql_packages }}"
   environment: "{{ proxy_env | default({}) }}"
   when: ansible_os_family == "Debian"
-  tags: install_postgres
 
 ...

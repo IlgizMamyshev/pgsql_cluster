@@ -1,0 +1,81 @@
+---
+# yamllint disable rule:line-length
+
+- name: "Make sure handlers are flushed immediately"
+  meta: flush_handlers
+
+# install local repo
+- block:
+    - name: Install local OS repository | Create directory "{{ os_local_repo_dir }}" on Ansible host if not exists
+      ansible.builtin.file:
+        path: "{{ os_local_repo_dir }}"
+        state: directory
+        mode: u+x,g+x,o+x
+      delegate_to: localhost
+      run_once: true
+
+    - name: Install local OS repository | '*.deb' files in "{{ os_local_repo_dir }}" on Ansible host is exists?
+      ansible.builtin.find:
+        paths: "{{ os_local_repo_dir }}"
+        patterns: "*.deb"
+      delegate_to: localhost
+      register: found_files
+
+    - block:
+        - name: Install local OS repository | Create directory "{{ os_local_repo_remote_dir }}" on remote host if not exists
+          ansible.builtin.file:
+            path: "{{ os_local_repo_remote_dir }}"
+            state: directory
+            mode: u+x,g+x,o+x
+
+        - name: Install local OS repository | Copy '*.deb' files to "{{ os_local_repo_remote_dir }}" on remote host
+          ansible.builtin.copy:
+            src: "{{ item }}"
+            remote_src: false
+            dest: "{{ os_local_repo_remote_dir }}"
+            owner: "root"
+            mode: "0644"
+          with_fileglob:
+            - "{{ os_local_repo_dir }}/*.deb"
+
+        - name: Install local OS repository | Install package dpkg-dev (for use dpkg-scanpackages)
+          ansible.builtin.shell: |
+            dpkg --force-depends -i dpkg-dev*.deb
+          args:
+            chdir: "{{ os_local_repo_remote_dir }}" # Change working directory before execution
+
+        - name: Install local OS repository | Fix broken apt packages to resolve dependencies
+          ansible.builtin.shell: |
+            apt -y --fix-broken install
+
+        - name: Install local OS repository | Scan packages (dpkg-scanpackages)
+          ansible.builtin.shell: |
+            dpkg-scanpackages -t deb . | gzip | cat > Packages.gz
+          args:
+            chdir: "{{ os_local_repo_remote_dir }}" # Change working directory before execution
+
+# Если в системе уже подключен CDROM репозиторий, то модуль ansible.builtin.apt_repository может "ломать" название CDROM репозитория
+#        - name: Install local OS repository | Add a new repository
+#          ansible.builtin.apt_repository:
+#            repo: "deb [trusted=yes] file:{{ os_local_repo_remote_dir }} ./"
+#            state: present
+#            filename: "{{ os_local_repo_remote_dir }}"  # Create /etc/apt/sources.list.d/filename.list
+#            #install_python_apt: false
+#            update_cache: true # Updates apt cache after adding the repo
+
+        - name: Install local OS repository | Add a new repository
+          ansible.builtin.copy:
+            dest: "/etc/apt/sources.list.d/{{ os_local_repo_remote_dir | ansible.builtin.basename }}.list"
+            content: "deb [trusted=yes] file:{{ os_local_repo_remote_dir }} ./"
+            mode: '0644'
+            force: true
+
+        - name: Install local OS repository | Update apt cache
+          ansible.builtin.apt:
+            update_cache: yes
+
+      when: found_files.matched > 0
+
+  when: os_local_repo_install | bool
+
+...

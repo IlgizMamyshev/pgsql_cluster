@@ -37,7 +37,6 @@
       when: ansible_os_family == "RedHat" and
             ansible_distribution_major_version >= '8'
   when: locale_gen is defined and locale_gen | length > 0
-  tags: locales, locale_gen
 
 - block:
     - name: Set locale "{{ locale }}" into /etc/default/locale
@@ -93,6 +92,5 @@
       when: ansible_os_family == "RedHat"
   ignore_errors: true
   when: locale is defined and locale | length > 0
-  tags: locales, locale_env
 
 ...

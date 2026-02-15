@@ -12,16 +12,41 @@
     state: present
   environment: "{{ proxy_env | default({}) }}"
 
-- block:  # install etcd package from repo
-    - name: "Download etcd package"
-      get_url:
+# install etcd package from repo
+- block:
+    - name: Ensure the download data directory exists "{{ etcd_package_cache_dir }}"
+      ansible.builtin.file:
+        path: "{{ etcd_package_cache_dir }}"
+        state: directory
+        mode: u+x,g+x,o+x
+      delegate_to: localhost
+      run_once: true
+
+    - name: Check if the etcd package file already exists on Ansible host
+      ansible.builtin.stat:
+        path: "{{ etcd_package_cache_dir }}/{{ etcd_package_repo | basename }}"
+      delegate_to: localhost
+      run_once: true
+      register: file_stat
+
+    - name: "Download etcd package to Ansible host"
+      ansible.builtin.get_url:
         url: "{{ item }}"
-        dest: /tmp/
+        dest: "{{ etcd_package_cache_dir }}"
         timeout: 60
         validate_certs: false
+      delegate_to: localhost
       loop:
         - "{{ etcd_package_repo }}"
       environment: "{{ proxy_env | default({}) }}"
+      run_once: true
+      when: not file_stat.stat.exists
+
+    - name: "Copy etcd package to remote host"
+      ansible.builtin.copy:
+        src: "{{ etcd_package_cache_dir }}/{{ etcd_package_repo | basename }}"
+        dest: /tmp/
+        remote_src: false
 
     - name: "Extract etcd into /tmp"
       unarchive:
@@ -32,7 +57,7 @@
         remote_src: true
 
     - name: "Copy etcd and etcdctl binary files to /usr/local/bin/"
-      copy:
+      ansible.builtin.copy:
         src: "/tmp/{{ etcd_package_repo.split('.tar.gz')[0] | basename }}/{{ item }}"
         dest: /usr/local/bin/
         mode: u+x,g+x,o+x
@@ -43,7 +68,7 @@
   when: etcd_package_repo | length > 0
 
 - name: "Add etcd user"
-  user:
+  ansible.builtin.user:
     name: etcd
     shell: /usr/sbin/nologin
     home: "{{ etcd_data_dir }}"

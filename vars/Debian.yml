@@ -18,11 +18,11 @@ postgresql_version_terse: "{{ postgresql_version | replace('.', '') }}"
 os_specific_packages:
   Debian-9: [python, python-dev, python-psycopg2, python-setuptools] # , python-pip, python-requests
   Debian-10: [python3]  #[python, python-dev, python-psycopg2, python-setuptools]
-  Debian-11: [python3]  # python 2 is not required
-  Debian-12: [python3]  # python 2 is not required
+  Debian-11: [python3]
+  Debian-12: [python3]
   Ubuntu-18: [python, python-dev, python-psycopg2, python-setuptools]
-  Ubuntu-20: [python3]  # python 2 is not required
-  Ubuntu-22: [python3]  # python 2 is not required
+  Ubuntu-20: [python3]
+  Ubuntu-22: [python3]
 system_packages:
   - "{{ os_specific_packages[ansible_distribution ~ '-' ~ ansible_distribution_major_version] }}"
   - python3
@@ -33,23 +33,25 @@ system_packages:
 #  - python3-cryptography
 #  - pysyncobj
 #  - python3-requests
+  - python3-systemd
   - curl
   - less
   - sudo
   - vim
   - gcc
   - jq
-  - iptables
+#  - iptables
   - acl
-# for dns updates
+# for dnscp
   - dnsutils
+  - iputils-arping
 # optional packages
   - htop
   - jq
   - curl
 
 # Extra packages
-etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/{{ etcd_ver }}/etcd-{{ etcd_ver }}-linux-amd64.tar.gz"
+etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/{{ etcd_ver }}/etcd-{{ etcd_ver }}-linux-amd64.tar.gz" # or use repo in network
 
 # Patroni package will be installed from the pip (by default).
 # You also have the option of choosing an patroni installation method using the deb package.

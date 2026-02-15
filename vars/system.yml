@@ -2,22 +2,30 @@
 
 timezone: "Europe/Moscow"
 
+##########################################################
 # Generate locale
+##########################################################
 # (except RHEL>=8,use glibc-langpack)
 locale_gen:
   - {language_country: "en_US", encoding: "UTF-8"}
   - {language_country: "ru_RU", encoding: "UTF-8"}  # optional
 #  - {language_country: "", encoding: ""}
 
+##########################################################
 # Set system locale (LANG,LC_ALL)
+##########################################################
 locale: "en_US.utf-8"
 
+##########################################################
 # Configure swap space (if not already exists)
+##########################################################
 swap_file_create: false  # or 'false'
 swap_file_path: /swapfile
 swap_file_size_mb: '2048'  # change this value for your system
 
+##########################################################
 # Kernel parameters
+##########################################################
 sysctl_set: true  # or 'false'
 # these parameters for example! Specify kernel options for your system
 sysctl_conf:
@@ -54,19 +62,22 @@ sysctl_conf:
     - {name: "net.core.somaxconn", value: "65535"}
     - {name: "net.ipv4.tcp_tw_reuse", value: "1"}
 
-
+##########################################################
 # Transparent Huge Pages
+##########################################################
 disable_thp: true  # or 'false'
 
-
+##########################################################
 # Max open file limit
+##########################################################
 set_limits: true  # or 'false'
 limits_user: "postgres"
 soft_nofile: 65536
 hard_nofile: 200000
 
-
+##########################################################
 # I/O Scheduler (optional)
+##########################################################
 # https://www.cloudbees.com/blog/linux-io-scheduler-tuning
 # https://www.monperrus.net/martin/scheduler+queue+size+and+resilience+to+heavy+IO
 set_scheduler: true  # 'false' or 'true'
@@ -86,8 +97,9 @@ scheduler:
 # bfq         - (avoid for databases)
 # kyber
 
-
+##########################################################
 # sudo
+##########################################################
 sudo_users:
   - name: "postgres"
     nopasswd: "yes"  # or "no" to require a password
@@ -96,34 +108,4 @@ sudo_users:
 #    nopasswd: "no"
 #    commands: "/usr/bin/find, /usr/bin/less, /usr/bin/tail, /bin/kill"
 
-
-# Firewall. Installs an iptables-based firewall for Linux (ansible-role-firewall)
-firewall_enabled_at_boot: true # or false (Set up a firewall yourself)
-
-firewall_allowed_tcp_ports_for:
-  master: []
-  replica: []
-  postgres_cluster:
-    - "{{ ansible_ssh_port | default(22) }}"
-    - "{{ postgresql_port }}"
-    - "{{ patroni_restapi_port }}"  # Patroni REST API port
-#    - "3389"  # RDP
-#    - "445"  # SMB
-#    - "10050"  # Zabbix agent
-    - "9090"   # Prometheus Exporter metrics
-    - "9890"   # pgSCV Exporter metrics
-  etcd_cluster:
-    - "{{ ansible_ssh_port | default(22) }}"
-    - "2379"
-    - "2380"
-#    - "3389"  # RDP
-#    - "10050"  # Zabbix agent
-
-firewall_additional_rules_for:
-  master: []
-  replica: []
-  postgres_cluster: []
-  etcd_cluster: []
-#    - "iptables -p vrrp -A INPUT -j ACCEPT"  # Keepalived (vrrp)
-#    - "iptables -p vrrp -A OUTPUT -j ACCEPT"  # Keepalived (vrrp)
 ...

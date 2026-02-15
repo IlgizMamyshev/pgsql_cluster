@@ -6,15 +6,50 @@
 
 # install pip package from repo
 - block:  # with get-pip.py
-    - name: pip | get-pip.py
-      get_url:
+    - name: Ensure the download data directory exists "{{ patroni_package_cache_dir }}" on Ansible host
+      ansible.builtin.file:
+        path: "{{ patroni_package_cache_dir }}"
+        state: directory
+        mode: u+x,g+x,o+x
+      delegate_to: localhost
+      run_once: true
+
+    - name: Check if the etcd package file already exists on Ansible host
+      ansible.builtin.stat:
+        path: "{{ etcd_package_cache_dir }}/{{ etcd_package_repo | basename }}"
+      delegate_to: localhost
+      run_once: true
+      register: file_stat
+
+    - name: "Download pip package to Ansible host"
+      ansible.builtin.get_url:
         url: "{{ item }}"
-        dest: /tmp/
+        dest: "{{ patroni_package_cache_dir }}"
         timeout: 60
         validate_certs: false
+      delegate_to: localhost
       loop:
         - "{{ pip_package_repo }}"
+      environment: "{{ proxy_env | default({}) }}"
+      run_once: true
+      when: not file_stat.stat.exists
+
+    - name: "Copy pip package to remote host"
+      ansible.builtin.copy:
+        src: "{{ patroni_package_cache_dir }}/{{ pip_package_repo | basename }}"
+        dest: /tmp/
+        remote_src: false
       register: get_pip_result
+
+#    - name: pip | get-pip.py
+#      get_url:
+#        url: "{{ item }}"
+#        dest: /tmp/
+#        timeout: 60
+#        validate_certs: false
+#      loop:
+#        - "{{ pip_package_repo }}"
+#      register: get_pip_result
 
     - name: pip | install pip
       command: >
@@ -25,9 +60,7 @@
       args:
         chdir: /tmp/
       when: get_pip_result.changed
-  environment: "{{ proxy_env | default({}) }}"
-  when: pip_package_repo is search("get-pip.py") and
-        proxy_env is defined and proxy_env | length > 0
+  when: pip_package_repo is search("get-pip.py") #and proxy_env is defined and proxy_env | length > 0
 
 - block:  # with tar.gz
     - name: pip | download pip package

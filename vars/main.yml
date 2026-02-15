@@ -1,5 +1,8 @@
 ---
 
+##########################################################
+# COMMON variables
+##########################################################
 # Proxy variables (optional) for download packages using a proxy server
 proxy_env: {}
 #  http_proxy: http://imamyshev:Password@proxy.demo.ru:8080
@@ -7,15 +10,19 @@ proxy_env: {}
 #  no_proxy: "127.0.0.1,localhost,etcd-n1,etcd-n2,etcd-n3,pgsql-n1,pgsql-n2,pgsql-n3"
 # -------------------------------------------
 
-# Patroni
-patroni_cluster_name: "PGSQL-CL"  # specify the cluster name
+downloaded_package_cache_dir: "./downloads" # local path on Ansible host
+
+##########################################################
+# PATRONI part 1
+##########################################################
+patroni_cluster_name: "MLK-DB-PGPRO-C2"  # specify the cluster name
 patroni_restapi_port: "8008" # Patroni REST API port (Used https protocol in this project!)
-patroni_install_version: "2.1.7" # "latest"  # or specific version (example 1.5.6)
+patroni_install_version: "4.1.0" # "latest"  # or specific version (example 4.1.0)
 patroni_scripts_dir: "/etc/patroni" # for patroni callback scripts
 patroni_superuser_username: "postgres"
-patroni_superuser_password: "Password"  # please change password
+patroni_superuser_password: "P@ssword"  # please change password
 patroni_replication_username: "replicator"
-patroni_replication_password: "Password2"  # please change password
+patroni_replication_password: "P@ssword2"  # please change password
 synchronous_mode: true  # or 'true' for enable synchronous database replication
 synchronous_mode_strict: false  # if 'true' then block all client writes to the master, when a synchronous replica is not available
 synchronous_node_count: 2  # number of synchronous standby databases
@@ -23,23 +30,32 @@ synchronous_node_count: 2  # number of synchronous standby databases
 # Watchdog support
 patroni_with_watchdog: true # true or false
 
+# local path on Ansible host for package downloads
+patroni_package_cache_dir: "{{ downloaded_package_cache_dir }}/patroni"
+
+##########################################################
+# VIP and DNS connection point management
+##########################################################
 # DNS Connection Point
-cluster_vip: "192.168.10.222"  # empty or one VIP address (or some VIP addresses in different subnets, separated by commas, for example: "172.16.32.180,172.16.10.180" ), for client access to PostgreSQL
+cluster_vip: "192.168.13.222"  # empty or one VIP address (or some VIP addresses in different subnets, separated by commas, for example: "172.16.32.180,172.16.10.180" ), for client access to PostgreSQL
 dnscp:
   vcompname: "{{ patroni_cluster_name }}" # Virtual Computer Name - Client Access Point
   vcomppassword: "Password3" # Password for Virtual Computer Name Account. Empty for anonimous auth to DNS zone.
   #set password example (powershell): Get-ADComputer PGSQL-CL | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "Password3" -Force)
-  dnszonefqdn: "im.local" # Set DNS zone FQDN (AD Domain FQDN).
-  dnsserver: "" # Set FQDN or IP or empty (empty is recommended for automatically detect). Used for register DNS name.
-  ttl: "1200" # DNS record TTL in seconds. TTL=1200 - default. Set TTL=30 for multi-site clusters (recommended).
+  dnszonefqdn: "dba.lab" # Set DNS zone FQDN (AD Domain FQDN).
+  dnsserver: "192.168.13.1" # Set FQDN or IP or empty (empty is recommended for automatically detect). Used for register DNS name.
+  ttl: "30" # DNS record TTL in seconds. TTL=1200 - default. Set TTL=30 for multi-site clusters (recommended).
   #Join to ADDS:
   #  sudo hostnamectl set-hostname pgsql-n1
   #  sudo apt-get install astra-ad-sssd-client && astra-ad-sssd-client -d example.ru -u Administrator@example.ru -px
 
+##########################################################
+# DCS
+##########################################################
 # DCS (Distributed Consensus Store)
 dcs_exists: true # 'false' or 'true'. Use 'true' if the etcd cluster is already installed.
 
-etcd_ver: "v3.5.6" # version for deploy etcd cluster
+etcd_ver: "v3.5.6" # Set version for etcd when etcd repo used for installation (see etcd_package_repo in Debian.yml).
 etcd_data_dir: "/var/lib/etcd"
 etcd_cluster_name: "etcd-{{ patroni_cluster_name }}"  # ETCD_INITIAL_CLUSTER_TOKEN
 
@@ -47,13 +63,19 @@ patroni_etcd_hosts:
   port: "2379"
   protocol: "https" # current solution support only https (Mutual TLS)
   ifname: "eth0"
-
 # more options you can specify in the roles/patroni/templates/patroni.yml.j2
 # https://patroni.readthedocs.io/en/latest/SETTINGS.html#etcd
 
+# local path on Ansible host for package downloads
+etcd_package_cache_dir: "{{ downloaded_package_cache_dir }}/etcd" # local path on Ansible host
+
+##########################################################
+# POSTGRESQL
+##########################################################
 # PostgreSQL variables
-postgresql_fork: "PostgreSQL" # "PostgreSQL" or "PostgresPro"
-postgresql_version: "16" # major version
+postgresql_fork: "PostgresPro" # "PostgreSQL" or "PostgresPro"
+postgresql_version: "18" # major version
+postgresql_edition: "ent" # "std" for PostgresPro Standard, "ent" for PostgresPro Entarprise Edition
 # postgresql_data_dir: see vars/Debian.yml
 postgresql_port: "5432"
 postgresql_ifname: "eth0" # forexample "eth0", "bond0" - network interface name on each cluster node
@@ -180,13 +202,18 @@ postgresql_pg_hba:
 #  - {type: "host", database: "all", user: "all", address: "192.168.0.0/24", method: "ident", options: "map=main"}  # use pg_ident
 #  - {type: "host", database: "all", user: "all", address: "172.16.0.0/16", method: "{{ postgresql_password_encryption_algorithm }}"}
   - {type: "host", database: "all", user: "all", address: "0.0.0.0/0", method: "{{ postgresql_password_encryption_algorithm }}"} # accept all incoming connections
-
+##########################################################
+# PATRONI 
+##########################################################
+#
 # list of lines that Patroni will use to generate pg_ident.conf
 postgresql_pg_ident: []
 #  - {mapname: "main", system_username: "postgres", pg_username: "backup"}
 #  - {mapname: "", system_username: "", pg_username: ""}
 
-
+##########################################################
+# PATRONI part 2
+##########################################################
 # Extended variables (optional)
 patroni_ttl: 30
 patroni_loop_wait: 10
@@ -240,6 +267,23 @@ postgresql_restore_command: ""
 disable_archive_command: true  # or 'false' to not disable archive_command after restore
 keep_patroni_dynamic_json: true  # or 'false' to remove patroni.dynamic.json after restore (if exists)
 
+##########################################################
 # PKI
+##########################################################
 pki_cert_artifacts_dir: "./certs"
+
+##########################################################
+# OS LOCAL REPO
+##########################################################
+os_local_repo_dir: "{{ downloaded_package_cache_dir }}/os_repo"
+
+# Local repo dir on target computer (will be created automatically)
+os_local_repo_remote_dir: "/opt/os_repo"
+
+# Prepare a copy of the operating system repository cache based on the remote server repository cache
+os_local_repo_collect_files: true # 'false' or 'true'. Use 'true' to copy *.deb files from remote server (from /var/cache/apt/archives/*.deb) to Ansible host (to os_local_repo_dir).
+
+# Install a local operating system repository on a remote server
+os_local_repo_install: true # 'false' or 'true'. Use 'true' if you need to create local repo on remote server without Internet or OS Repository access.
+
 ...

@@ -7,7 +7,7 @@
 
 readonly productname="DNS Connection Point for Patroni";
 readonly giturl="https://github.com/IlgizMamyshev/dnscp";
-readonly version="23062024";
+readonly version="13102025";
 
 ### Script for Patroni clusters
 # Script Features:
@@ -17,15 +17,29 @@ readonly version="23062024";
 
 ### Installation
 # * Enable using callbacks in Patroni configuration (/etc/patroni/patroni.yml):
-#postgresql:
-#  callbacks:
-#    on_start: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
-#    on_stop:  "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
-#    on_role_change: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
+#     postgresql:
+#       callbacks:
+#         on_start: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
+#         on_stop:  "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
+#         on_role_change: "/etc/patroni/dnscp.sh -vips '<VIPs>' -pwdfile '/etc/patroni/dnscp.secret' -- "
 # * Put script to "/etc/patroni/dnscp.sh" and set executable (adds the execute permission for all users to the existing permissions.):
-#   sudo mv dnscp.sh /etc/patroni/dnscp.sh && sudo chmod ugo+x /etc/patroni/dnscp.sh
-# * View command for dnsupdate:
-#   sudo cat /var/spool/cron/crontabs/postgres
+#     sudo mv dnscp.sh /etc/patroni/dnscp.sh && sudo chmod ugo+x /etc/patroni/dnscp.sh
+# * Grant privileges - add Patroni service user to crontab group: sudo usermod -a -G crontab postgres
+# * Logging:
+#     sudo mkdir /var/log/dnscp
+#     sudo chown postgres:postgres /var/log/dnscp
+#     nano /etc/logrotate.d/dnscp
+#   Add text to /etc/logrotate.d/dnscp file:
+#     /var/log/dnscp/*log {
+#         weekly
+#         missingok
+#         notifempty
+#         rotate 7
+#         compress
+#         su postgres postgres
+#         delaycompress
+#     }
+#   Check logrotate: logrotate -d /etc/logrotate.d/dnscp
 
 ### Operation Systems supported
 # * Astra Linux
@@ -51,12 +65,17 @@ readonly version="23062024";
 #           sudo apt-get install astra-ad-sssd-client && astra-ad-sssd-client -d example.ru -u Administrator@example.ru -px
 #   * Create Active Directory Computer Account (will be used as network name for client access) in any way, for example (PowerShell, from domain joined Windows Server): New-ADComputer pgsql
 #   * Set new password for Computer Account, for example (PowerShell): Get-ADComputer pgsql | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "P@ssw0rd" -Force)
+#
 # Scenario 2 (Non-secure DNS update):
 #   * Microsoft DNS Server and DNS-zone with allow non-secure DNS update.
+#
 # Common:
 #   * Install nsupdate utility for Debian: sudo apt-get install dnsutils
 #   * Install nsupdate utility for Red Hat: sudo yum install bind-utils
 #   * Install arping utility: sudo apt-get install iputils-arping
+#
+# View command for dnsupdate:
+#   sudo cat /var/spool/cron/crontabs/postgres
 
 #####################################################
 # Set variable defaults
@@ -67,9 +86,10 @@ VCompPassword=`cat $VCompPasswordFile 2>/dev/null`; # empty for non-secure DNS u
 DNSzoneFQDN="";                                     # empty for automatically detect
 DNSserver="";                                       # empty for automatically detect
 TTL=1200;                                           # TTL=1200 - default. Use for example TTL=30 for multi-site clusters.
+LOG="/var/log/dnscp/$(basename "$0").log"           # Log file
 
 #####################################################
-# Funtions
+# Functions
 #####################################################
 function usage() {
 echo "Usage:";
@@ -156,8 +176,7 @@ function in_subnet {
 #####################################################
 # Set variables
 #####################################################
-readonly LOGHEADER="Patroni Callback"
-MSG="[$LOGHEADER] Called: $0 $*"
+readonly LOGHEADER="[$(date --rfc-3339=seconds)] [Patroni Callback]"
 
 # Options processing
 while [ -n "$1" ]
@@ -200,15 +219,16 @@ readonly VCompName=$3
 [[ "${VERBOSE}" == "" ]] && VERBOSE=0
 [[ "${DEBUG}" == "" ]] && DEBUG=0
 
-if [[ $VERBOSE -eq 1 ]]; then echo $MSG; fi
+if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER $productname" | tee -a $LOG; fi
+if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER Called: $0 $*" | tee -a $LOG; fi
 if [[ $DEBUG -eq 1 ]]; then
-    echo "VIPs=$VIPs";
-    echo "VCompName=$VCompName";
-    echo "VCompPassword=$VCompPassword";
-    echo "VCompPasswordFile=$VCompPasswordFile";
-    echo "DNSzoneFQDN=$DNSzoneFQDN";
-    echo "DNSserver=$DNSserver";
-    echo "TTL=$TTL";
+    echo "VIPs=$VIPs" | tee -a $LOG;
+    echo "VCompName=$VCompName" | tee -a $LOG;
+    echo "VCompPassword=$VCompPassword" | tee -a $LOG;
+    echo "VCompPasswordFile=$VCompPasswordFile" | tee -a $LOG;
+    echo "DNSzoneFQDN=$DNSzoneFQDN" | tee -a $LOG;
+    echo "DNSserver=$DNSserver" | tee -a $LOG;
+    echo "TTL=$TTL" | tee -a $LOG;
 fi
 
 #####################################################
@@ -231,50 +251,80 @@ esac
 #####################################################
 ## VIPs defined?
 if [[ "" == "$VIPs" ]]; then
-    echo "[$LOGHEADER] INFO: Check prerequisites: VIPs not defined. Nothing to do.";
+    echo "$LOGHEADER INFO: Check prerequisites: VIPs not defined. Nothing to do." | tee -a $LOG;
     exit 0; # Exit without error
 fi
 
 ## Active Directory\SAMBA Domain joined?
 JOINED_OK=""
-if [[ ! -z $VCompPassword ]]; then
-    JOINED_OK=$(sudo net ads testjoin | awk '{print $NF}')
-    if [[ "OK" == "$JOINED_OK" ]]; then
-        # Detect DNS zone FQDN
-        if [[ "" == "$DNSzoneFQDN" ]]; then
-            DNSzoneFQDN=$(sudo net ads info | awk -F": " '{if ($1 == "Realm") print tolower($2)}')
-            if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS zone FQDN is $DNSzoneFQDN"; fi
+case $OS in
+    1 )
+        # astra
+        REQUIRED_PKG="astra-ad-sssd-client";
+        PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
+        if [[ "" == "$PKG_OK" ]]; then
+            #echo "$LOGHEADER WARNING: Check prerequisites: No $REQUIRED_PKG." |  tee -a $LOG;
+            PKG_OK="";
+        else
+            if [[ ! -z $VCompPassword ]]; then
+                sudo astra-ad-sssd-client -i;
+                EXITCODE=$?;
+                if [[ $EXITCODE -eq 0 ]]; then
+                    JOINED_OK="OK";
+                    # Detect DNS zone FQDN
+                    if [[ "" == "$DNSzoneFQDN" ]]; then
+                        DNSzoneFQDN=$(sudo net ads info | awk -F": " '{if ($1 == "Realm") print tolower($2)}')
+                        if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: Detected DNS zone FQDN is $DNSzoneFQDN" | tee -a $LOG; fi
+                    fi
+                else
+                    echo "$LOGHEADER WARNING: Check prerequisites: Not joined to Active Directory\SAMBA Domain!" | tee -a $LOG;
+                fi
+                # $VCompPassword is empty. Script configured for non-secure DNS update.
+            fi
         fi
-    else
-        echo "[$LOGHEADER] WARNING: Check prerequisites: Not joined to Active Directory\SAMBA Domain!";
-    fi
-    # $VCompPassword is empty. Script configured for non-secure DNS update.
-fi
+        ;;
+    2 )
+        # rhel
+
+        ;;
+    * )
+        if [[ ! -z $VCompPassword ]]; then
+            JOINED_OK=$(sudo net ads testjoin | awk '{print $NF}')
+            if [[ "OK" == "$JOINED_OK" ]]; then
+                # Detect DNS zone FQDN
+                if [[ "" == "$DNSzoneFQDN" ]]; then
+                    DNSzoneFQDN=$(sudo net ads info | awk -F": " '{if ($1 == "Realm") print tolower($2)}')
+                    if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: Detected DNS zone FQDN is $DNSzoneFQDN" | tee -a $LOG; fi
+                fi
+            else
+                echo "$LOGHEADER WARNING: Check prerequisites: Not joined to Active Directory\SAMBA Domain!" | tee -a $LOG;
+            fi
+            # $VCompPassword is empty. Script configured for non-secure DNS update.
+        fi
+        ;;
+esac
 
 ## package is installed?
 case $OS in
     1 )
-        # debian
+        # astra\debian
         REQUIRED_PKG="iputils-arping";
         PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
         if [[ "" == "$PKG_OK" ]]; then
-            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
-            PKG_OK=""
-        else
-            PKG_OK=""
+            echo "$LOGHEADER WARNING: Check prerequisites: No $REQUIRED_PKG." |  tee -a $LOG;
         fi
 
         REQUIRED_PKG="dnsutils"
         PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
         if [[ "" == "$PKG_OK" ]]; then
-            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
+            echo "$LOGHEADER WARNING: Check prerequisites: No $REQUIRED_PKG." | tee -a $LOG;
             #sudo apt-get --yes install $REQUIRED_PKG #Setting up $REQUIRED_PKG
             exit 1; # Exit with error
         else
             # Detect DNS Server
             if [[ "" == "$DNSserver" ]] && [[ "OK" == "$JOINED_OK" ]]; then
                 DNSserver=$(sudo net ads info | awk -F": " '{if ($1 == "LDAP server name") print $2}') # AD DS logon DC
-                if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS Server is $DNSserver"; fi
+                if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: Detected DNS Server is $DNSserver" | tee -a $LOG; fi
             fi
         fi
         ;;
@@ -286,14 +336,14 @@ case $OS in
         REQUIRED_PKG="bind-utils"
         PKG_OK=$(rpm -qa $REQUIRED_PKG)
         if [[ "" == "$PKG_OK" ]]; then
-            echo "[$LOGHEADER] WARNING: Check prerequisites: No $REQUIRED_PKG.";
+            echo "$LOGHEADER WARNING: Check prerequisites: No $REQUIRED_PKG." | tee -a $LOG;
             #sudo yum --yes install $REQUIRED_PKG #Setting up $REQUIRED_PKG
             exit 1; # Exit with error
         else
             # Detect DNS Server
             if [[ "" == "$DNSserver" ]] && [[ "OK" == "$JOINED_OK" ]]; then
                 DNSserver=$(sudo net ads info | awk -F": " '{if ($1 == "LDAP server name") print $2}') # AD DS logon DC
-                if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: Detected DNS Server is $DNSserver"; fi
+                if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: Detected DNS Server is $DNSserver" | tee -a $LOG; fi
             fi
         fi
         ;;
@@ -312,7 +362,7 @@ if [[ "" == "$DNSzoneFQDN" ]] || [[ "" == "$DNSserver" ]] || [[ "" == "$VCompNam
     if [[ "" == "$DNSzoneFQDN" ]]; then MSG="$MSG${MSGSEPARATOR}DNSzoneFQDN"; MSGSEPARATOR=", "; fi
     if [[ "" == "$DNSserver" ]]; then MSG="$MSG${MSGSEPARATOR}DNSserver"; MSGSEPARATOR=", "; fi
     if [[ "" == "$VCompName" ]]; then MSG="$MSG${MSGSEPARATOR}$MSGVCompName"; MSGSEPARATOR=", "; fi
-    echo "[$LOGHEADER] INFO: DNSCP does not know about $MSG. Only VIPs will be managed.";
+    echo "$LOGHEADER INFO: DNSCP does not know about $MSG. Only VIPs will be managed." | tee -a $LOG;
 fi
 
 readonly VCompNameFQDN=$VCompName.$DNSzoneFQDN
@@ -333,12 +383,12 @@ for IP in $(echo $VIPs | awk '{gsub(","," "); print $0}'); do
 done
 
 if [[ -z $VIP ]]; then
-    echo "[$LOGHEADER] WARNING: No suitable VIP ($VIPs) for $NETWORK";
+    echo "$LOGHEADER WARNING: No suitable VIP ($VIPs) for $NETWORK" | tee -a $LOG;
 else
     #####################################################
     # VIP
     #####################################################
-    if [[ $DEBUG -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP is candidate for current network"; fi
+    if [[ $DEBUG -eq 1 ]]; then echo "$LOGHEADER INFO: VIP $VIP is candidate for current network" | tee -a $LOG; fi
     case $CB_NAME in
         on_stop )
             #####################################################
@@ -348,15 +398,15 @@ else
                 sudo ip address del $VIP/$NETID dev $IFNAME;
                 EXITCODE=$?;
                 if [[ $EXITCODE -eq 0 ]]; then
-                    echo "[$LOGHEADER] INFO: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED";
+                    echo "$LOGHEADER INFO: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED" | tee -a $LOG;
                 else
-                    echo "[$LOGHEADER] ERROR: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE.";
+                    echo "$LOGHEADER ERROR: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE." | tee -a $LOG;
                 fi
 
                 # Remove cron task
                 crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
             else
-                if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP not exist, no action required."; fi
+                if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: VIP $VIP not exist, no action required." | tee -a $LOG; fi
             fi
             ;;
         on_start|on_role_change|on_schedule )
@@ -368,11 +418,11 @@ else
                     sudo ip address add $VIP/$NETID dev $IFNAME;
                     EXITCODE=$?;
                     if [[ $EXITCODE -eq 0 ]]; then
-                        echo "[$LOGHEADER] INFO: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED";
+                        echo "$LOGHEADER INFO: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED" | tee -a $LOG;
                     else
-                        echo "[$LOGHEADER] ERROR: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE.";
+                        echo "$LOGHEADER ERROR: Adding VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE." | tee -a $LOG;
                     fi
-                    
+
                     #####################################################
                     # Sends a gratuitous ARP request and reply
                     #  * While RFC 2002 does not say whether a gratuitous ARP request or reply is preferred
@@ -385,21 +435,21 @@ else
                     sudo arping -c 4 -f -U -I $IFNAME -s $VIP $VIP
                     EXITCODE=$?;
                     if [[ $EXITCODE -eq 0 ]]; then
-                        echo "[$LOGHEADER] INFO: Gratuitous ARP request SUCCEEDED";
+                        echo "$LOGHEADER INFO: Gratuitous ARP request SUCCEEDED" | tee -a $LOG;
                     else
-                        echo "[$LOGHEADER] ERROR: Gratuitous ARP request package is malformed: $EXITCODE.";
+                        echo "$LOGHEADER ERROR: Gratuitous ARP request package is malformed: $EXITCODE." | tee -a $LOG;
                     fi
-                    
+
                     # ARP REPLY packets
                     sudo arping -c 4 -f -A -I $IFNAME -s $VIP $VIP
                     EXITCODE=$?;
                     if [[ $EXITCODE -eq 0 ]]; then
-                        echo "[$LOGHEADER] INFO: Gratuitous ARP reply SUCCEEDED";
+                        echo "$LOGHEADER INFO: Gratuitous ARP reply SUCCEEDED" | tee -a $LOG;
                     else
-                        echo "[$LOGHEADER] ERROR: Gratuitous ARP reply package is malformed: $EXITCODE.";
+                        echo "$LOGHEADER ERROR: Gratuitous ARP reply package is malformed: $EXITCODE." | tee -a $LOG;
                     fi
                 else
-                    if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP already present, no action required."; fi
+                    if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: VIP $VIP already present, no action required." | tee -a $LOG; fi
                 fi
             fi
 
@@ -411,15 +461,15 @@ else
                     sudo ip address del $VIP/$NETID dev $IFNAME;
                     EXITCODE=$?;
                     if [[ $EXITCODE -eq 0 ]]; then
-                        echo "[$LOGHEADER] INFO: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED";
+                        echo "$LOGHEADER INFO: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback SUCCEEDED" | tee -a $LOG;
                     else
-                        echo "[$LOGHEADER] ERROR: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE.";
+                        echo "$LOGHEADER ERROR: Deleting VIP '$VIP/$NETID dev $IFNAME' by Patroni $CB_NAME callback is FAILED with error code $EXITCODE." | tee -a $LOG;
                     fi
 
                     # Remove cron task
                     crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
                 else
-                    if [[ $VERBOSE -eq 1 ]]; then echo "[$LOGHEADER] INFO: VIP $VIP not exist, no action required."; fi
+                    if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: VIP $VIP not exist, no action required." | tee -a $LOG; fi
                 fi
             fi
 
@@ -429,8 +479,8 @@ else
             #####################################################
             if [[ "" != "$DNSzoneFQDN" ]] && [[ "" != "$DNSserver" ]] && [[ "" != "$VCompName" ]]; then
                 if [[ $VERBOSE -eq 1 ]]; then
-                    echo "[$LOGHEADER] INFO: DNS zone FQDN is $DNSzoneFQDN";
-                    echo "[$LOGHEADER] INFO: DNS Server is $DNSserver";
+                    echo "$LOGHEADER INFO: DNS zone FQDN is $DNSzoneFQDN" | tee -a $LOG;
+                    echo "$LOGHEADER INFO: DNS Server is $DNSserver" | tee -a $LOG;
                 fi
 
                 # Authentication by $VCompName Computer account
@@ -442,21 +492,25 @@ else
                 # AddOrUpdateDNSRecord
                 if [[ ! -z $VCompPassword ]] && [[ $KINITEXITCODE -eq 0 ]]; then
                     # Active Directory\SAMBA authentication under Computer Account is success.
-                    NSUPDATERESULT=$( (echo "server $DNSserver"; echo "zone $DNSzoneFQDN"; echo "update delete $VCompNameFQDN A"; echo send; echo "update add $VCompNameFQDN $TTL A $VIP"; echo send) | nsupdate -g -v 2>&1)
-                    EXITMSG=$(echo "$NSUPDATERESULT" | awk -F": " '{if ($1~/failed/) print $0}');
-                    if [[ "" == "$EXITMSG" ]]; then
-                        echo "[$LOGHEADER] INFO: Registering $VCompNameFQDN on $DNSserver with secure DNS update SUCCEEDED";
+                    NSUPDATERESULT=$( (echo "server $DNSserver"; echo "zone $DNSzoneFQDN"; echo "update delete $VCompNameFQDN A"; echo "send"; echo "update add $VCompNameFQDN $TTL A $VIP"; echo "send") | nsupdate -g -v 2>&1)
+                    EXITCODE=$?;
+                    if [[ $EXITCODE -eq 0 ]]; then
+                        echo "$LOGHEADER INFO: Registering $VCompNameFQDN on $DNSserver with secure DNS update SUCCEEDED" | tee -a $LOG;
+                        if [[ $VERBOSE -eq 1 ]]; then echo -e "$LOGHEADER INFO: nsupdate result message:\n$NSUPDATERESULT" | tee -a $LOG; fi
                     else
-                        echo "[$LOGHEADER] ERROR: Registering $VCompNameFQDN on $DNSserver with secure DNS update FAILED with error: $EXITMSG.";
+                        echo "$LOGHEADER ERROR: Registering $VCompNameFQDN on $DNSserver with secure DNS update FAILED with error." | tee -a $LOG;
+                        echo -e "$LOGHEADER ERROR: nsupdate result message:\n$NSUPDATERESULT" | tee -a $LOG;
                     fi
                 else
                     # Active Directory\SAMBA authentication is failed. Try to non-secure DNS-update.
-                    NSUPDATERESULT=$( (echo "server $DNSserver"; echo "zone $DNSzoneFQDN"; echo "update delete $VCompNameFQDN A"; echo send; echo "update add $VCompNameFQDN $TTL A $VIP"; echo send) | nsupdate -v 2>&1)
-                    EXITMSG=$(echo "$NSUPDATERESULT" | awk -F": " '{if ($1~/failed/) print $0}');
-                    if [[ "" == "$EXITMSG" ]]; then
-                        echo "[$LOGHEADER] INFO: Registering $VCompNameFQDN on $DNSserver with non-secure DNS update SUCCEEDED";
+                    NSUPDATERESULT=$( (echo "server $DNSserver"; echo "zone $DNSzoneFQDN"; echo "update delete $VCompNameFQDN A"; echo "send"; echo "update add $VCompNameFQDN $TTL A $VIP"; echo "send") | nsupdate -v 2>&1)
+                    EXITCODE=$?;
+                    if [[ $EXITCODE -eq 0 ]]; then
+                        echo "$LOGHEADER INFO: Registering $VCompNameFQDN on $DNSserver with non-secure DNS update SUCCEEDED" | tee -a $LOG;
+                        if [[ $VERBOSE -eq 1 ]]; then echo -e "$LOGHEADER ERROR: nsupdate result message:\n$NSUPDATERESULT" | tee -a $LOG; fi
                     else
-                        echo "[$LOGHEADER] ERROR: Registering $VCompNameFQDN on $DNSserver with non-secure DNS update FAILED with error: $EXITMSG.";
+                        echo "$LOGHEADER ERROR: Registering $VCompNameFQDN on $DNSserver with non-secure DNS update FAILED with error." | tee -a $LOG;
+                        echo -e "$LOGHEADER ERROR: nsupdate result message:\n$NSUPDATERESULT" | tee -a $LOG;
                     fi
                 fi
             fi
@@ -467,16 +521,20 @@ else
             #####################################################
             # Remove cron task
             crontab -u $(whoami) -l | grep -v "$SCRIPTNAME" | crontab -u $(whoami) -
+            if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: 'Dynamic DNS Update' cron task for $(whoami) user removed." | tee -a $LOG; fi
             if [[ -z $(ip address | awk '/'$VIP'/{print $0}') ]]; then
                 # service_ip not exists
-                if [[ $VERBOSE -eq 1 ]]; then
-                    echo "[$LOGHEADER] INFO: service_ip not exists.";
-                    echo "[$LOGHEADER] INFO: 'Dynamic DNS Update' cron task for $(whoami) user removed.";
-                fi
+                if [[ $VERBOSE -eq 1 ]]; then echo "$LOGHEADER INFO: service_ip not exists." | tee -a $LOG; fi
             else
-                # service_ip exists - Add cron task for Dynamic DNS Updates
-                (crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName") | crontab -u $(whoami) -
-                echo "[$LOGHEADER] INFO: 'Dynamic DNS Update' cron task for $(whoami) user (re)enabled.";
+                # service_ip exists
+                if [[ "" == "$DNSzoneFQDN" ]]; then
+                    # DNSzoneFQDN not set
+                    echo "$LOGHEADER INFO: Dynamic DNS Updates not needed." | tee -a $LOG;
+                else
+                    # DNSzoneFQDN is set - add cron task for Dynamic DNS and VIP
+                    (crontab -u $(whoami) -l 2>/dev/null; echo "53 00 * * * $0 -vips '$VIPs' -pwdfile '$VCompPasswordFile' -dnszonefqdn '$DNSzoneFQDN' -dnsserver '$DNSserver' -ttl '$TTL' -- on_schedule registerdns $VCompName") | crontab -u $(whoami) -
+                    echo "$LOGHEADER INFO: 'Dynamic DNS Update' cron task for $(whoami) user (re)enabled." | tee -a $LOG;
+                fi
             fi
             ;;
         * )

@@ -1,0 +1,39 @@
+---
+# yamllint disable rule:line-length
+
+- name: "Make sure handlers are flushed immediately"
+  meta: flush_handlers
+
+# Fill directory on Ansible host from apt cache on remote host
+- block:
+    - name: Collect files | Create directory "{{ os_local_repo_dir }}" on Ansible host if not exists
+      ansible.builtin.file:
+        path: "{{ os_local_repo_dir }}"
+        state: directory
+        mode: u+x,g+x,o+x
+      delegate_to: localhost
+      run_once: true
+
+    - block:
+        - name:  Collect files | Download installed packages as ".deb" files on remote host
+          ansible.builtin.shell: |
+            apt-get -y --download-only install --reinstall $(dpkg --get-selections '*' | awk '$2=="install" {print $1}')
+
+        - name: Collect files | Find "*.deb" files on remote host
+          ansible.builtin.find:
+            paths: /var/cache/apt/archives/
+            patterns: '*.deb'
+          register: found_files
+
+        - name: Collect files | Fetch "*.deb" files from remote host to "{{ os_local_repo_dir }}" on Ansible host
+          ansible.builtin.fetch:
+            src: "{{ item.path }}"
+            dest: "{{ os_local_repo_dir }}/"
+            flat: yes
+          loop: "{{ found_files.files }}"
+
+      when: ansible_os_family == "Debian"
+
+  when: os_local_repo_install | bool
+
+...

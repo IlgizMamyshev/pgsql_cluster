@@ -3,24 +3,21 @@
 
 # SSL: Obtaining the Private IP Addresses of Managed Nodes
 #  https://www.digitalocean.com/community/tutorials/how-to-set-up-and-secure-an-etcd-cluster-with-ansible-on-ubuntu-18-04)
-- name: deploy_etcdcluster.yml | Deploy etcd Cluster - get etcd private IP
+- name: Deploy etcd Cluster | Get etcd private IP
   hosts: etcd_cluster
   become: true
   become_method: sudo
   any_errors_fatal: true
-#  vars_files:
-#    - vars/main.yml
 
   tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - shell: ip -f inet addr show "{{ patroni_etcd_hosts.ifname }}" | sed -En -e 's/.*inet ([0-9.]+).*/\1/p'
       register: etcd_privateIP
 
 # PKI
-- name: deploy_etcdcluster.yml | Deploy etcd Cluster - Deploy CA if ca.key file non exist
+- name: Deploy etcd Cluster | Deploy CA if ca.key file non exist
   hosts: localhost
   become: true
   become_method: sudo
@@ -30,9 +27,8 @@
   pre_tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
-    - name: "Check for CA private key exists.."
+    - name: "Check CA private key exists"
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.key"
       register: pki_ca_key
@@ -42,7 +38,7 @@
         msg: "ca.key exist, deploy new Root CA skipping"
       when: pki_ca_key.stat.exists|bool and pki_ca_key.stat.isreg|bool
 
-    - name: "Ensure CA certificate file exist"
+    - name: "Check CA certificate file exists"
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.crt"
       register: pki_ca_cert
@@ -50,27 +46,24 @@
     - name: "File not exist"
       debug:
         msg: "ca.crt not exist"
-      when: not pki_ca_cert.stat.exists|bool #and not pki_ca_cert.stat.isreg|bool
+      when: not pki_ca_cert.stat.exists|bool
   roles:
     # Deploy CA if ca.key file non exist
     - role: ca
-      when: not pki_ca_key.stat.exists|bool #and not pki_ca_key.stat.isreg|bool
-    - role: install-root-cert
+      when: not pki_ca_key.stat.exists|bool
+    - role: install-root-cert # on Ansible host
 
 # SSL: Generating ETCD members’ Private Keys and CSRs
-- name: deploy_etcdcluster.yml | Generating ETCD members’ Private Keys and CSRs
+- name: Deploy etcd Cluster | Generating ETCD members’ Private Keys and CSRs
   hosts: localhost
   become: true
   become_method: sudo
   gather_facts: false
   any_errors_fatal: true
-#  vars_files:
-#    - vars/main.yml
 
   tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - name: "Generate private key for each member"
       openssl_privatekey:
@@ -109,7 +102,7 @@
       with_items: "{{ groups['etcd_cluster'] }}"
 
 # Deploy ETCD
-- name: deploy_etcdcluster.yml | Deploy etcd Cluster
+- name: Deploy etcd Cluster | On target hosts
   hosts: etcd_cluster
   become: true
   become_method: sudo
@@ -125,11 +118,9 @@
 
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - name: Include system variables
       ansible.builtin.include_vars: "vars/system.yml"
-      tags: always
 
     - name: Set Astra Linux specific variables
       ansible.builtin.include_vars: "vars/{{ ansible_os_family }}.yml"
@@ -138,6 +129,14 @@
     - name: Include OS-specific variables
       ansible.builtin.include_vars: "vars/{{ ansible_os_family }}.yml"
       when: not ansible_os_family == 'Rocky' and not ansible_os_family == 'AlmaLinux'
+
+    - name: Populate service facts
+      ansible.builtin.service_facts:
+
+    - name: Stop playbook
+      ansible.builtin.fail:
+        msg: "Fatal: The etcd service is exists! Stopping playbook."
+      when: ansible_facts.services['etcd.service'] is defined
 
     - name: Update apt cache
       ansible.builtin.apt:
@@ -148,7 +147,6 @@
       delay: 5
       retries: 3
       environment: "{{ proxy_env | default({}) }}"
-      when: ansible_os_family == "Debian"
 
     - name: Make sure the gnupg and apt-transport-https packages are present
       ansible.builtin.apt:
@@ -161,28 +159,8 @@
       delay: 5
       retries: 3
       environment: "{{ proxy_env | default({}) }}"
-      when: ansible_os_family == "Debian"
 
-    - name: Build a firewall_ports_dynamic_var
-      ansible.builtin.set_fact:
-        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
-      loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot | bool
-
-    - name: Build a firewall_rules_dynamic_var
-      ansible.builtin.set_fact:
-        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
-      loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot | bool
   roles:
-    - role: ansible-role-firewall
-      environment: "{{ proxy_env | default({}) }}"
-      vars:
-        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
-        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
-      when: firewall_enabled_at_boot | bool
-      tags: firewall
-
     - role: io-scheduler
     - role: sysctl
     - role: timezone

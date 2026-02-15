@@ -5,7 +5,6 @@
   become: true
   become_method: sudo
   gather_facts: true
-  tags: always
   any_errors_fatal: true
   environment: "{{ proxy_env | default({}) }}"
 
@@ -18,11 +17,9 @@
 
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - name: Include system variables
       ansible.builtin.include_vars: "vars/system.yml"
-      tags: always
 
     - name: Include Astra Linux specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
@@ -36,7 +33,6 @@
     - role: pre-checks
       vars:
         minimal_ansible_version: 2.7.0
-      tags: always
 
   tasks:
     - name: Update apt cache
@@ -61,11 +57,18 @@
       retries: 3
       when: ansible_os_family == "Debian"
 
-
-# Deploy etcd cluster
-- name: deploy_pgcluster.yml | Deploy etcd cluster
-  ansible.builtin.import_playbook: deploy_etcdcluster.yml
-  tags: etcd
+# Deploy etcd cluster (if not exists)
+- name: Deploy etcd cluster (if not exists)
+  hosts: localhost
+  any_errors_fatal: true
+  gather_facts: false
+  tasks:
+    - name: Include main variables
+      ansible.builtin.include_vars: "vars/main.yml"
+#    - debug:
+#        var: dcs_exists
+- ansible.builtin.import_playbook: deploy_etcdcluster.yml
+  when: not dcs_exists | bool
 
 # SSL: Obtaining the Private IP Addresses of Managed Nodes
 - hosts: postgres_cluster
@@ -75,13 +78,12 @@
   tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - shell: ip -f inet addr show "{{ postgresql_ifname }}" | sed -En -e 's/.*inet ([0-9.]+).*/\1/p'
       register: patroni_privateIP
 
 # PKI
-- name: deploy_pgcluster.yml | Deploy CA if ca.key file non exist
+- name: Deploy CA if ca.key file non exist
   hosts: localhost
   gather_facts: false
   become: true
@@ -91,35 +93,34 @@
   pre_tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
-    - name: "Check for CA private key exists.."
+    - name: "Check CA private key exists"
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.key"
       register: pki_ca_key
 
-    - name: "File exist"
+    - name: "File exists"
       debug:
         msg: "ca.key exist, deploy new Root CA skipping"
       when: pki_ca_key.stat.exists|bool and pki_ca_key.stat.isreg|bool
 
-    - name: "Ensure CA certificate file exist"
+    - name: "Check CA certificate file exists"
       stat:
         path: "{{ pki_cert_artifacts_dir }}/ca.crt"
       register: pki_ca_cert
 
-    - name: "File not exist"
+    - name: "File not exists"
       debug:
         msg: "ca.crt not exist"
-      when: not pki_ca_cert.stat.exists|bool #and not pki_ca_cert.stat.isreg|bool
+      when: not pki_ca_cert.stat.exists|bool
   roles:
     # Deploy CA if key file non exist
     - role: ca
       when: not pki_ca_key.stat.exists|bool #and not pki_ca_key.stat.isreg|bool
-    - role: install-root-cert
+    - role: install-root-cert # on Ansible host
 
 # SSL: Generating Patroni cluster members’ Private Keys and CSRs
-- name: deploy_pgcluster.yml | Generating Patroni cluster members’ Private Keys and CSRs
+- name: Generating Patroni cluster members’ Private Keys and CSRs
   hosts: localhost
   gather_facts: false
   become: true
@@ -128,7 +129,6 @@
   tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - name: "Generate private key for each member"
       openssl_privatekey:
@@ -166,7 +166,7 @@
         force: true
       with_items: "{{ groups['postgres_cluster'] }}"
 
-- name: deploy_pgcluster.yml | PostgreSQL Cluster Configuration
+- name: PostgreSQL Cluster Configuration
   hosts: postgres_cluster
   become: true
   become_method: sudo
@@ -176,11 +176,9 @@
   pre_tasks:
     - name: Include main variables
       ansible.builtin.include_vars: "vars/main.yml"
-      tags: always
 
     - name: Include system variables
       ansible.builtin.include_vars: "vars/system.yml"
-      tags: always
 
     - name: Include Astra Linux specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
@@ -214,29 +212,12 @@
       environment: "{{ proxy_env | default({}) }}"
       when: ansible_os_family == "Debian"
 
-    - name: Build a firewall_ports_dynamic_var
-      set_fact:
-        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
-      loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot | bool
-      tags: firewall
-
-    - name: Build a firewall_rules_dynamic_var
-      set_fact:
-        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
-      loop: "{{ hostvars[inventory_hostname].group_names }}"
-      when: firewall_enabled_at_boot | bool
-      tags: firewall
   roles:
-    - role: ansible-role-firewall
-      environment: "{{ proxy_env | default({}) }}"
-      vars:
-        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
-        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
-      when: firewall_enabled_at_boot | bool
-      tags: firewall
-
     - role: io-scheduler
+    - role: local_repo_collect_files
+      when: os_local_repo_collect_files | bool
+    - role: local_repo_install
+      when: os_local_repo_install | bool
     - role: packages
     - role: sudo
     - role: swap
@@ -249,7 +230,7 @@
       when: cluster_vip is defined and cluster_vip | length > 0
     - role: install-root-cert
 
-- name: deploy_pgcluster.yml | PostgreSQL Cluster Deployment
+- name: PostgreSQL Cluster Deployment
   hosts: postgres_cluster
   become: true
   become_method: sudo
@@ -288,18 +269,13 @@
     - role: postgresql-users
       when: is_master | bool and postgresql_users | length > 0
 
-#    - role: postgresql-databases
-#      when: is_master | bool and postgresql_databases | length > 0
-
-#    - role: postgresql-schemas
-#      when: is_master | bool and postgresql_schemas | length > 0
-
     - role: postgresql-extensions
       when: is_master | bool and postgresql_extensions | length > 0
 
-#    - role: pgbouncer/config
-#      when: pgbouncer_install|bool
-
     # finish (info)
     - role: deploy-finish
+
+    - role: local_repo_collect_files
+      when: os_local_repo_collect_files | bool
+
 ...
